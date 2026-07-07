@@ -32,7 +32,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import db  # noqa: E402
 from lib import queries  # noqa: E402
 from lib.format import fmt_money, fmt_pct, output  # noqa: E402
-from lib import forecast_gp as fg  # noqa: E402
+
+# El forecast GP es una capa aparte con dependencias pesadas (torch/gpytorch).
+try:
+    from lib import forecast_gp as fg  # noqa: E402
+except ImportError:
+    print(
+        "ERROR: faltan las dependencias del forecast (capa opcional). "
+        "Instala con: pip install -r requirements-forecast.txt",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 TICKET_FLOOR_USD = 10.0
 TICKET_CAP_USD = 5000.0

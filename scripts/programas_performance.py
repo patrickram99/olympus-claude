@@ -79,7 +79,8 @@ def main():
                                   "(p. ej. comparar su historia completa con --desde 2026-01-01)")
     ap.add_argument("--orden", choices=["cobrado", "score", "eficiencia", "tc", "ventas"], default="score",
                     help="Criterio de orden de la tabla (default score)")
-    ap.add_argument("--usd-pen", type=float, help="Override USD->PEN (default .env / 3.78)")
+    ap.add_argument("--usd-pen", type=float, help="Override USD->PEN (solo aplica con --moneda pen)")
+    cli.add_moneda(ap)
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output")
     args = ap.parse_args()
@@ -92,6 +93,8 @@ def main():
         hasta = (hoy + timedelta(days=1)).isoformat()   # incluir todo hoy
 
     usd_pen = args.usd_pen if args.usd_pen is not None else CostParams.from_env().usd_pen
+    factor, suf = cli.factor_moneda(args.moneda, usd_pen)
+    c_cobr, c_comp = f"Cobr{suf}", f"Compr{suf}"
 
     ids = None
     if args.ids:
@@ -114,8 +117,8 @@ def main():
         ventas = int(r["Ventas"] or 0)
         cont, nocont = llam.get(pid, (0, 0))
         llamadas = cont + nocont
-        cobr = float(r["CobradoUSD"] or 0) * usd_pen
-        compr = float(r["ComprometidoUSD"] or 0) * usd_pen
+        cobr = float(r["CobradoUSD"] or 0) * factor
+        compr = float(r["ComprometidoUSD"] or 0) * factor
         rows.append({
             "Id": pid,
             "Codigo": (r["Codigo"] or "").strip() or "—",
@@ -126,8 +129,8 @@ def main():
             "Llamadas": llamadas,
             "Cont%": round(cont / llamadas * 100, 1) if llamadas else None,
             "Llam/Vta": round(llamadas / ventas, 1) if ventas else None,
-            "CobrPEN": round(cobr, 0),
-            "ComprPEN": round(compr, 0),
+            c_cobr: round(cobr, 0),
+            c_comp: round(compr, 0),
             "%Cobr": round(cobr / compr * 100, 1) if compr else None,
             "Cobr/Llam": round(cobr / llamadas, 1) if llamadas else None,
             "Ticket": round(cobr / ventas, 0) if ventas else None,
@@ -139,7 +142,7 @@ def main():
     for r in elig:
         r["_eff"] = r["Llam/Vta"]            # menor = mejor
         r["_tc"] = r["TC%"]
-        r["_cobr"] = r["CobrPEN"]
+        r["_cobr"] = r[c_cobr]
     if elig:
         _norm(elig, "_tc")
         _norm(elig, "_cobr")
@@ -153,7 +156,7 @@ def main():
                 del r[k]
 
     key = {
-        "cobrado": lambda x: -(x["CobrPEN"] or 0),
+        "cobrado": lambda x: -(x[c_cobr] or 0),
         "ventas": lambda x: -(x["Ventas"] or 0),
         "tc": lambda x: -(x["TC%"] or 0),
         "eficiencia": lambda x: (x["Llam/Vta"] if x["Llam/Vta"] is not None else 9e9),
@@ -163,7 +166,7 @@ def main():
     top = rows[:args.top]
 
     # ── Callouts ──────────────────────────────────────────────────────────────
-    tot_cobr = sum(r["CobrPEN"] for r in rows)
+    tot_cobr = sum(r[c_cobr] for r in rows)
     tot_llam = sum(r["Llamadas"] for r in rows)
     tot_vtas = sum(r["Ventas"] for r in rows)
     best_eff = sorted([r for r in elig], key=lambda x: x["Llam/Vta"])[:3]
@@ -173,11 +176,12 @@ def main():
     def _l(r, field, suf=""):
         return f"     {r['Codigo']:<26} {r['Programa'][:30]:<30} {r[field]}{suf}  (V={r['Ventas']})"
 
+    cambio = f"  ·  USD/PEN={usd_pen}" if args.moneda == "pen" else ""
     hdr = [
         "",
-        f">>> PERFORMANCE DE PROGRAMAS · ventana [{desde} -> {hasta})  ·  USD/PEN={usd_pen}",
+        f">>> PERFORMANCE DE PROGRAMAS · ventana [{desde} -> {hasta})  ·  moneda={suf}{cambio}",
         f">>> Programas con venta: {len(rows)}  ·  elegibles para score (V>={args.min_ventas}): {len(elig)}  ·  orden: {args.orden}",
-        f">>> Totales ventana: {tot_vtas:,} ventas · {tot_llam:,} llamadas · {tot_cobr:,.0f} PEN cobrados "
+        f">>> Totales ventana: {tot_vtas:,} ventas · {tot_llam:,} llamadas · {tot_cobr:,.0f} {suf} cobrados "
         f"· {tot_llam/tot_vtas:,.1f} llam/venta global" if tot_vtas else "",
         "",
         ">>> MÁS EFICIENTES (menos llamadas por venta):",
@@ -185,7 +189,7 @@ def main():
         ">>> MENOS EFICIENTES (más llamadas por venta — queman tiempo de asesor):",
         *[_l(r, "Llam/Vta", " llam/vta") for r in worst_eff],
         ">>> MÁS DINERO POR LLAMADA (mejor retorno al esfuerzo):",
-        *[_l(r, "Cobr/Llam", " PEN/llam") for r in best_money_eff],
+        *[_l(r, "Cobr/Llam", f" {suf}/llam") for r in best_money_eff],
         "",
         ">>> TC=ventana(no cohorte) · Llamadas=delta acumulado (1ra fila in-window cuenta su acumulado, leve sobreconteo).",
         "",
@@ -193,7 +197,7 @@ def main():
     print("\n".join(h for h in hdr if h is not None), file=sys.stderr)
 
     cols = ["Id", "Codigo", "Programa", "Leads", "Ventas", "TC%", "Llamadas", "Cont%",
-            "Llam/Vta", "CobrPEN", "%Cobr", "Cobr/Llam", "Ticket", "PerfScore"]
+            "Llam/Vta", c_cobr, "%Cobr", "Cobr/Llam", "Ticket", "PerfScore"]
     output(top, fmt=args.fmt, out_path=args.output, headers=cols)
 
 

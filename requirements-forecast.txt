@@ -1,0 +1,7 @@
+# Capa opcional de forecast GP (scripts/forecast_programa.py + lib/forecast_gp.py).
+# Decisión PM 2026-07-07: servicio/capa aparte del núcleo — el futuro MCP server
+# de empresa NO la incluye; se mantiene instalada en local.
+# torch CPU es suficiente:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+gpytorch>=1.11

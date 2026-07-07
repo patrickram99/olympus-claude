@@ -57,7 +57,15 @@ Si la validación imprime KPIs en tabla, todo OK. Si hay error de conexión, rev
 
 - El proveedor se elige con `DB_DIALECT` en `.env` (hoy `mssql`; `postgres` quedará habilitado con la migración). Lo específico de cada proveedor — driver, connection string, TLS/certificados — vive en `lib/db_backends/`, así el cambio de proveedor o de certificado no toca scripts ni queries.
 - `.env` nunca se versiona ni se empaqueta (está en `.gitignore`).
-- **Pendiente (D1) para el despliegue como MCP server de empresa:** crear una credencial de servicio **read-only** dedicada en la BD y usarla en lugar de credenciales personales.
+- **Pendiente (D1, lo hará el PM) para el despliegue como MCP server de empresa:** crear una credencial de servicio **read-only** dedicada en la BD. Las credenciales son una capa aparte (`.env` + `lib/db_backends/`): cambiarlas no toca scripts ni queries.
+
+## Decisiones de producto registradas (PM, 2026-07-07)
+
+- **D2 — Alcance del MCP:** el server de empresa expone solo los **scripts curados** como tools; SQL ad-hoc (`execute_sql`) queda reservado al PM.
+- **D3 — Forecast:** capa/servicio aparte del núcleo (deps pesadas en `requirements-forecast.txt`); NO va en el MCP de empresa, se mantiene funcional en local.
+- **D4 — Parámetros de negocio:** centralizados en `config.toml` (dueño: PM).
+- **D5 — Moneda:** todo en **USD** por defecto; `--moneda pen` disponible en los reportes de dinero.
+- **D6 — Límites:** `--top` máx. 500 (los actuales están bien).
 
 ## Uso desde CLI
 

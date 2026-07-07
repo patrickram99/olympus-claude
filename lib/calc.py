@@ -70,13 +70,15 @@ class CostParams:
 
     @classmethod
     def from_env(cls) -> "CostParams":
+        """Resuelve los parámetros de negocio: .env > config.toml > default."""
+        from . import config
         return cls(
-            salario_base_pen=float(os.environ.get("SALARIO_BASE_PEN", 565)),
-            cpl_usd=float(os.environ.get("CPL_USD", 0.20)),
-            comision_asesor_pct=float(os.environ.get("COMISION_ASESOR_PCT", 0.10)),
-            comision_admin_pct=float(os.environ.get("COMISION_ADMIN_PCT", 0.10)),
-            docente_usd=float(os.environ.get("DOCENTE_USD", 1440)),
-            usd_pen=float(os.environ.get("USD_PEN_RATE", 3.78)),
+            salario_base_pen=config.get_float("costos", "salario_base_pen", "SALARIO_BASE_PEN", 565),
+            cpl_usd=config.get_float("costos", "cpl_usd", "CPL_USD", 0.20),
+            comision_asesor_pct=config.get_float("costos", "comision_asesor_pct", "COMISION_ASESOR_PCT", 0.10),
+            comision_admin_pct=config.get_float("costos", "comision_admin_pct", "COMISION_ADMIN_PCT", 0.10),
+            docente_usd=config.get_float("costos", "docente_usd", "DOCENTE_USD", 1440),
+            usd_pen=config.get_float("costos", "usd_pen", "USD_PEN_RATE", 3.78),
         )
 
 

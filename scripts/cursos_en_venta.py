@@ -12,7 +12,7 @@ una ventana), esto lista SOLO los productos cuyo estado de catálogo es "En vent
 - Inscritos (Ins) = oportunidades cuyo estado vigente es Matriculado (3).
 - Perdidos = Perdido (7) + No calificado (2).
 - Ingresos = cohorte all-time del curso: comprometido = plan de las matriculadas;
-  cobrado = pagos reales. Moneda en PEN (USD/PEN configurable).
+  cobrado = pagos reales. Moneda USD por defecto (--moneda pen para soles).
 
 Uso:
   python scripts/cursos_en_venta.py                          # tabla en pantalla
@@ -35,10 +35,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db
+from lib import cli, db
+from lib.calc import CostParams
 from lib.format import output
 
-USD_PEN_DEFAULT = 3.78
 EN_VENTA = 20  # adm.Tipo.Id (categoria EstadoProducto) = "En venta"
 
 
@@ -98,7 +98,8 @@ GROUP BY q.IdProducto
 """
 
 
-def build_rows(usd_pen: float, excluir: str | None, desarrollador: str | None):
+def build_rows(factor: float, excluir: str | None, desarrollador: str | None):
+    """factor: multiplicador sobre los montos USD de la BD (1.0=USD, usd_pen=PEN)."""
     prods = db.query(SQL_PRODUCTOS, [EN_VENTA])
     funnel = db.query(SQL_FUNNEL, [EN_VENTA])
     ingresos = db.query(SQL_INGRESOS, [EN_VENTA])
@@ -145,8 +146,8 @@ def build_rows(usd_pen: float, excluir: str | None, desarrollador: str | None):
             "TC": round(ins / total * 100, 2) if total else 0.0,
             "TCProc": round(ins / procesados * 100, 2) if procesados else 0.0,
             "Perdidos": perdidos,
-            "Comprometido": round(compr * usd_pen, 2),
-            "Cobrado": round(cobr * usd_pen, 2),
+            "Comprometido": round(compr * factor, 2),
+            "Cobrado": round(cobr * factor, 2),
             "%Cob": round(cobr / compr * 100, 1) if compr else 0.0,
         })
 
@@ -199,12 +200,15 @@ def main():
     ap.add_argument("--desarrollador", help="Filtra por encargado del curso: Id numérico o texto del nombre (substring).")
     ap.add_argument("--excluir", default="mundialer",
                     help='Regex (case-insensitive) para excluir por código+nombre. Default "mundialer". Usa "" para no excluir.')
-    ap.add_argument("--usd-pen", type=float, default=USD_PEN_DEFAULT, help="Tipo de cambio USD->PEN (default 3.78).")
+    ap.add_argument("--usd-pen", type=float, help="Tipo de cambio USD->PEN (default: config.toml). Solo aplica con --moneda pen.")
+    cli.add_moneda(ap)
     ap.add_argument("--fmt", choices=["table", "csv", "json", "xlsx"], default="table")
     ap.add_argument("-o", "--output")
     args = ap.parse_args()
 
-    rows = build_rows(args.usd_pen, args.excluir or None, args.desarrollador)
+    usd_pen = args.usd_pen if args.usd_pen is not None else CostParams.from_env().usd_pen
+    factor, suf = cli.factor_moneda(args.moneda, usd_pen)
+    rows = build_rows(factor, args.excluir or None, args.desarrollador)
 
     scope = f" · dev~'{args.desarrollador}'" if args.desarrollador else ""
     excl = f" · excluye /{args.excluir}/" if args.excluir else ""
@@ -212,10 +216,11 @@ def main():
     tot_ins = sum(r["Ins"] for r in rows)
     tot_compr = sum(r["Comprometido"] for r in rows)
     tot_cobr = sum(r["Cobrado"] for r in rows)
-    print(f"\n>>> CURSOS EN VENTA (EstadoProducto=20){scope}{excl}  ·  USD/PEN={args.usd_pen}", file=sys.stderr)
+    cambio = f"  ·  USD/PEN={usd_pen}" if args.moneda == "pen" else ""
+    print(f"\n>>> CURSOS EN VENTA (EstadoProducto=20){scope}{excl}  ·  moneda={suf}{cambio}", file=sys.stderr)
     print(f">>> {len(rows)} cursos · Leads {tot_leads:,} · Inscritos {tot_ins:,} · "
-          f"TC {tot_ins / tot_leads * 100:.2f}% · Comprometido {tot_compr:,.0f} PEN · "
-          f"Cobrado {tot_cobr:,.0f} PEN ({tot_cobr / tot_compr * 100:.0f}%)\n" if tot_leads and tot_compr
+          f"TC {tot_ins / tot_leads * 100:.2f}% · Comprometido {tot_compr:,.0f} {suf} · "
+          f"Cobrado {tot_cobr:,.0f} {suf} ({tot_cobr / tot_compr * 100:.0f}%)\n" if tot_leads and tot_compr
           else f">>> {len(rows)} cursos · Leads {tot_leads:,} · Inscritos {tot_ins:,}\n", file=sys.stderr)
 
     if args.fmt == "xlsx":

@@ -39,7 +39,8 @@ def main():
     ap.add_argument("--desde", type=cli.iso_date, default="2026-04-01", help="Fecha inicio inclusiva (YYYY-MM-DD)")
     ap.add_argument("--hasta", type=cli.iso_date, default="2026-06-01", help="Fecha fin EXCLUSIVA (YYYY-MM-DD)")
     ap.add_argument("--top", type=cli.top_type, default=25, help="Número de programas a mostrar")
-    ap.add_argument("--usd-pen", type=float, help="Override tipo de cambio USD->PEN (default .env / 3.78)")
+    ap.add_argument("--usd-pen", type=float, help="Override tipo de cambio USD->PEN (solo aplica con --moneda pen)")
+    cli.add_moneda(ap)
     ap.add_argument("--max-usd-por-venta", type=float, default=5000.0,
                     help="Ticket comprometido/venta sobre el cual se marca el dato como sospechoso "
                          "y se excluye del agregado de %% cobrado")
@@ -48,6 +49,8 @@ def main():
     args = ap.parse_args()
 
     usd_pen = args.usd_pen if args.usd_pen is not None else CostParams.from_env().usd_pen
+    factor, suf = cli.factor_moneda(args.moneda, usd_pen)
+    c_comp, c_cobr = f"Compr{suf}", f"Cobr{suf}"
 
     raw = db.query(queries.SQL_PROGRAMAS_TOP_VENTAS, [args.desde, args.hasta])
 
@@ -56,11 +59,11 @@ def main():
         leads = int(r["Leads"] or 0)
         ventas = int(r["Ventas"] or 0)
         conv = int(r["ConvCohorte"] or 0)
-        compr_pen = float(r["ComprometidoUSD"] or 0) * usd_pen
-        cobr_pen = float(r["CobradoUSD"] or 0) * usd_pen
+        compr = float(r["ComprometidoUSD"] or 0) * factor
+        cobr = float(r["CobradoUSD"] or 0) * factor
 
-        ticket = (compr_pen / ventas) if ventas else 0.0
-        sospechoso = ticket > args.max_usd_por_venta * usd_pen
+        ticket = (compr / ventas) if ventas else 0.0
+        sospechoso = ticket > args.max_usd_por_venta * factor
 
         rows.append({
             "Id": int(r["Id"]),
@@ -70,20 +73,20 @@ def main():
             "Ventas": ventas,
             "Conv": conv,
             "TC%": round(conv / leads * 100, 2) if leads else None,
-            "ComprPEN": round(compr_pen, 2),
-            "CobrPEN": round(cobr_pen, 2),
-            "%Cobr": round(cobr_pen / compr_pen * 100, 1) if compr_pen else None,
+            c_comp: round(compr, 2),
+            c_cobr: round(cobr, 2),
+            "%Cobr": round(cobr / compr * 100, 1) if compr else None,
             "_sosp": sospechoso,
         })
 
     # Ranking por ventas (flujo), desempate por caja cobrada.
-    rows.sort(key=lambda x: (-x["Ventas"], -x["CobrPEN"]))
+    rows.sort(key=lambda x: (-x["Ventas"], -x[c_cobr]))
     top = rows[:args.top]
 
     # ── Análisis de % cobrado (sobre el top, excluyendo sospechosos) ──────────
     limpios = [r for r in top if not r["_sosp"]]
-    tot_comp = sum(r["ComprPEN"] for r in limpios)
-    tot_cobr = sum(r["CobrPEN"] for r in limpios)
+    tot_comp = sum(r[c_comp] for r in limpios)
+    tot_cobr = sum(r[c_cobr] for r in limpios)
     pct_global = (tot_cobr / tot_comp * 100) if tot_comp else 0.0
 
     con_muestra = [r for r in limpios if r["Ventas"] >= 5 and r["%Cobr"] is not None]
@@ -95,14 +98,15 @@ def main():
     def _line(r):
         return f"     {r['Codigo']:<18} {r['Programa'][:34]:<34} {r['%Cobr']:>5.1f}%  (V={r['Ventas']})"
 
+    cambio = f"  ·  USD/PEN={usd_pen}" if args.moneda == "pen" else ""
     hdr = [
         "",
-        f">>> Ventana: [{args.desde} -> {args.hasta})  ·  TC/PEN @ USD/PEN={usd_pen}",
+        f">>> Ventana: [{args.desde} -> {args.hasta})  ·  moneda={suf}{cambio}",
         f">>> Programas con ventas: {len(rows)}  ·  mostrando top {len(top)} por ventas",
         "",
         ">>> ANÁLISIS DE % COBRADO (top mostrado, excl. sospechosos):",
-        f"     Comprometido: {tot_comp:>14,.0f} PEN",
-        f"     Cobrado:      {tot_cobr:>14,.0f} PEN",
+        f"     Comprometido: {tot_comp:>14,.0f} {suf}",
+        f"     Cobrado:      {tot_cobr:>14,.0f} {suf}",
         f"     % cobrado global (ponderado): {pct_global:5.1f}%",
         f"     % cobrado promedio (simple, V>=5): {prom_simple:5.1f}%",
         "",
@@ -114,14 +118,14 @@ def main():
     if sospechosos:
         hdr += [
             "",
-            f">>> [!] {len(sospechosos)} programa(s) con ComprPEN sospechoso (ticket/venta > "
+            f">>> [!] {len(sospechosos)} programa(s) con {c_comp} sospechoso (ticket/venta > "
             f"{args.max_usd_por_venta:,.0f} USD) -- excluidos del agregado, revisar en la fuente:",
-            *[f"     {r['Codigo']} · {r['Programa'][:40]} · Compr={r['ComprPEN']:,.0f} PEN / {r['Ventas']} ventas"
+            *[f"     {r['Codigo']} · {r['Programa'][:40]} · Compr={r[c_comp]:,.0f} {suf} / {r['Ventas']} ventas"
               for r in sospechosos],
         ]
     print("\n".join(hdr) + "\n", file=sys.stderr)
 
-    cols = ["Id", "Codigo", "Programa", "Leads", "Ventas", "Conv", "TC%", "ComprPEN", "CobrPEN", "%Cobr"]
+    cols = ["Id", "Codigo", "Programa", "Leads", "Ventas", "Conv", "TC%", c_comp, c_cobr, "%Cobr"]
     output(top, fmt=args.fmt, out_path=args.output, headers=cols)
 
 

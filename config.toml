@@ -1,0 +1,22 @@
+# Parámetros de NEGOCIO de la skill olympus-crm-analytics.
+# Este archivo SÍ se versiona (no contiene secretos) y es la fuente editable
+# por negocio. Precedencia: flag CLI > variable en .env > este archivo > default.
+# Dueño: dirección de Product Management.
+
+[costos]
+usd_pen = 3.78              # tipo de cambio USD -> PEN
+salario_base_pen = 565.0    # salario base part-time (PT); full-time = 2x
+cpl_usd = 0.20              # costo por lead
+comision_asesor_pct = 0.10  # comisión del asesor sobre ingreso
+comision_admin_pct = 0.10   # comisión administrativa sobre ingreso
+docente_usd = 1440.0        # costo docente por curso
+
+[datos]
+# Inicio de los datos de ventas en el CRM. Personal.FechaIngreso pre-CRM se
+# trunca a esta fecha en análisis TTFS/cohort/ramp-up ("sales mode").
+sales_data_start = "2026-01-01"
+
+[salida]
+# Moneda por defecto de TODOS los reportes de dinero (decisión PM 2026-07-07).
+# Cada script acepta --moneda pen para convertir con [costos].usd_pen.
+moneda = "usd"

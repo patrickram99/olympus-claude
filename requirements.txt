@@ -1,9 +1,10 @@
+# Núcleo de la skill (todos los scripts salvo el forecast).
 pyodbc>=5.0.0
 python-dotenv>=1.0.0
 tabulate>=0.9.0
 pytest>=7.0.0
-# forecast_programa.py (GP forecast) — torch CPU es suficiente:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
 numpy>=1.26
-torch>=2.2
-gpytorch>=1.11
+
+# El forecast GP (forecast_programa.py) es una CAPA APARTE con dependencias
+# pesadas (~2 GB). Instálala solo donde se use:
+#   pip install -r requirements-forecast.txt

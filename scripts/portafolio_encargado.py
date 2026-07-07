@@ -37,7 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.calc import CostParams
 from lib.format import output
 
@@ -65,13 +65,15 @@ def main():
                     help="Mínimo de leads creados en la ventana para contar un producto como parte "
                          "del portafolio del período (default 20). Corta cohortes viejas que solo "
                          "captaron leads de goteo. Ignorado con --historico.")
-    ap.add_argument("--usd-pen", type=float, help="Override tipo de cambio USD->PEN (para expresar ingresos en PEN)")
+    ap.add_argument("--usd-pen", type=float, help="Override tipo de cambio USD->PEN (solo aplica con --moneda pen)")
+    cli.add_moneda(ap)
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output", help="Archivo de salida")
     args = ap.parse_args()
 
     p = CostParams.from_env()
     if args.usd_pen is not None: p.usd_pen = args.usd_pen
+    factor, suf = cli.factor_moneda(args.moneda, p.usd_pen)
 
     # 1. productos con encargado válido (excluye NULL y huérfanos)
     prods = db.query(queries.SQL_PRODUCTOS_ENCARGADO)
@@ -109,10 +111,10 @@ def main():
         if not args.historico and lw_in < args.min_leads:
             continue
 
-        # Ingresos en PEN (cobrado de la cohorte / comprometido de la ventana)
-        ing1 = cobrado.get(pid, 0.0) * p.usd_pen
+        # Ingresos en la moneda elegida (cobrado de la cohorte / comprometido de la ventana)
+        ing1 = cobrado.get(pid, 0.0) * factor
         mw = matric_win.get(pid, 0)
-        ing2 = comp_win.get(pid, 0.0) * p.usd_pen
+        ing2 = comp_win.get(pid, 0.0) * factor
 
         a = agg[pr["Encargado"]]
         a["Encargado"] = pr["EncargadoNombre"] or f"id={pr['Encargado']}"
@@ -171,7 +173,8 @@ def main():
         f">>> Encargados con encargado válido (excluye NULL y huérfanos) · {n_personas} personas\n"
         f">>> Productos = {cartera}\n"
         f"{base_txt}"
-        f">>> Ingresos en PEN (USD/PEN={p.usd_pen}). Este reporte NO calcula rentabilidad/margen: "
+        f">>> Ingresos en {suf}{f' (USD/PEN={p.usd_pen})' if args.moneda == 'pen' else ''}. "
+        f"Este reporte NO calcula rentabilidad/margen: "
         f"para eso usa producto_pnl.py / producto_compare.py por producto.\n",
         file=sys.stderr,
     )

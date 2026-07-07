@@ -43,6 +43,25 @@ def add_desde(ap: argparse.ArgumentParser, default: str | None = None,
                     default=default, help=f"{help_text} (alias: --since)")
 
 
+def add_moneda(ap: argparse.ArgumentParser) -> None:
+    """
+    Registra --moneda usd|pen. Default: config.toml [salida].moneda (decisión
+    PM 2026-07-07: todo en USD). Los montos de la BD están en USD; 'pen'
+    multiplica por [costos].usd_pen.
+    """
+    from . import config
+    default = str(config.get("salida", "moneda", "MONEDA_SALIDA", "usd")).lower()
+    ap.add_argument("--moneda", choices=["usd", "pen"], default=default,
+                    help=f"Moneda de los montos (default: {default}, ver config.toml)")
+
+
+def factor_moneda(moneda: str, usd_pen: float) -> tuple[float, str]:
+    """(multiplicador sobre montos USD de la BD, sufijo de columna 'USD'/'PEN')."""
+    if moneda == "pen":
+        return usd_pen, "PEN"
+    return 1.0, "USD"
+
+
 def top_type(value: str) -> int:
     """Entero 1..TOP_MAX para --top (evita pedidos desmedidos a la BD)."""
     try:

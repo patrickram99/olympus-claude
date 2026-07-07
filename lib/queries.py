@@ -37,13 +37,15 @@ import re
 # Configurable via env var SALES_DATA_START_DATE (default 2026-01-01).
 # ──────────────────────────────────────────────────────────────────────────
 
-SALES_DATA_START = os.environ.get("SALES_DATA_START_DATE")
+from . import config as _config
+
+SALES_DATA_START = _config.get("datos", "sales_data_start", "SALES_DATA_START_DATE", None)
 if SALES_DATA_START is None:
     SALES_DATA_START = "2026-01-01"
     import sys as _sys
     print(
-        f"AVISO: SALES_DATA_START_DATE no está en .env; usando default {SALES_DATA_START} "
-        "(análisis TTFS/cohort/ramp-up dependen de esta fecha).",
+        f"AVISO: sales_data_start no está en config.toml ni SALES_DATA_START_DATE en .env; "
+        f"usando default {SALES_DATA_START} (análisis TTFS/cohort/ramp-up dependen de esta fecha).",
         file=_sys.stderr,
     )
 
@@ -514,7 +516,7 @@ GROUP BY op.IdProducto
 SQL_LEADS_VENTANA_POR_PRODUCTO = """
 SELECT op.IdProducto AS P, COUNT(DISTINCT op.Id) AS LeadsVentana
 FROM adm.Oportunidad op
-WHERE op.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
+WHERE op.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
 GROUP BY op.IdProducto
 """
 
@@ -557,7 +559,7 @@ SELECT op.IdProducto AS P, SUM(pago.Monto) AS CobradoUSD
 FROM adm.CobranzaPago pago
 INNER JOIN adm.CobranzaPlan cp   ON cp.Id = pago.IdCobranzaPlan AND cp.Estado = 1
 INNER JOIN adm.Oportunidad op    ON op.Id = cp.IdOportunidad AND op.Estado = 1
-WHERE pago.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
+WHERE pago.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
 GROUP BY op.IdProducto
 """
 
@@ -575,7 +577,7 @@ INNER JOIN (
   GROUP BY he.IdOportunidad
 ) m ON m.IdOportunidad = op.Id
 INNER JOIN adm.CobranzaPlan cp ON cp.IdOportunidad = op.Id AND cp.Estado = 1
-WHERE op.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
+WHERE op.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
 GROUP BY op.IdProducto
 """
 
