@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.calc import wilson_lb, wilson_ub
 from lib.format import output
 
@@ -23,7 +23,7 @@ def main():
     ap.add_argument("--periodo", type=int, default=30, help="Días hacia atrás (default 30)")
     ap.add_argument("--umbral", type=int, default=30, help="Umbral mínimo de leads (default 30)")
     ap.add_argument("--jornada", type=int, choices=[31, 32], help="Filtrar jornada")
-    ap.add_argument("--top", type=int, default=20, help="N asesores a mostrar (default 20)")
+    ap.add_argument("--top", type=cli.top_type, default=20, help="N asesores a mostrar (default 20)")
     ap.add_argument("--bottom", action="store_true", help="Mostrar bottom en vez de top")
     ap.add_argument("-o", "--output", help="Archivo de salida")
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")

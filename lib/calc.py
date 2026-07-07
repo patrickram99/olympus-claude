@@ -101,9 +101,9 @@ class PnLResult:
     ingreso_pen: float
     margen_pen: float
     margen_pct: float
-    costo_por_lead: float
-    costo_por_matricula: float
-    ingreso_por_matricula: float
+    costo_por_lead: float | None  # None si no hubo leads
+    costo_por_matricula: float | None  # None si no hubo matrículas
+    ingreso_por_matricula: float | None  # None si no hubo matrículas
     breakeven_tc: float | None
     breakeven_cpl_usd: float | None
     breakeven_leads_min: float | None
@@ -128,14 +128,11 @@ def compute_pnl(b: ProductBaseline, p: CostParams, ingreso_mode: str = "cobrado"
     costo_total = salarios + docentes + cpl + comision_asesores + admin
     margen_pen = ingreso_pen - costo_total
     margen_pct = (margen_pen / ingreso_pen) if ingreso_pen > 0 else 0.0
-    cpl_total = b.leads or 1
-    matr = b.matriculados or 1
-
     # Break-even
     costo_fijo = salarios + docentes + cpl
     ingreso_por_matric_unit = (
         b.costo_base_usd * p.usd_pen * (1 - p.comision_asesor_pct - p.comision_admin_pct)
-    ) if b.costo_base_usd > 0 else (ingreso_pen / matr if matr else 0)
+    ) if b.costo_base_usd > 0 else (ingreso_pen / b.matriculados if b.matriculados else 0)
 
     if ingreso_por_matric_unit > 0:
         matric_be = costo_fijo / ingreso_por_matric_unit
@@ -161,9 +158,9 @@ def compute_pnl(b: ProductBaseline, p: CostParams, ingreso_mode: str = "cobrado"
         ingreso_pen=ingreso_pen,
         margen_pen=margen_pen,
         margen_pct=margen_pct,
-        costo_por_lead=costo_total / cpl_total,
-        costo_por_matricula=costo_total / matr,
-        ingreso_por_matricula=ingreso_pen / matr,
+        costo_por_lead=costo_total / b.leads if b.leads else None,
+        costo_por_matricula=costo_total / b.matriculados if b.matriculados else None,
+        ingreso_por_matricula=ingreso_pen / b.matriculados if b.matriculados else None,
         breakeven_tc=tc_be,
         breakeven_cpl_usd=cpl_max_usd,
         breakeven_leads_min=None,  # se puede agregar luego si se necesita

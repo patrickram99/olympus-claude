@@ -41,11 +41,14 @@ def main():
         print(f"Asesor {aid} no encontrado o inactivo.", file=sys.stderr)
         sys.exit(1)
 
-    leads = next((r["LeadsAsignados"] for r in db.query(queries.SQL_LEADS_ASIGNADOS, [p]) if r["IdPersonal"] == aid), 0)
-    matric = next((r["Matriculas"] for r in db.query(queries.SQL_MATRICULAS_POR_ASESOR, [p]) if r["IdPersonal"] == aid), 0)
-    ll = next((r for r in db.query(queries.SQL_LLAMADAS_POR_ASESOR, [p]) if r["IdPersonal"] == aid), {})
-    comp = next((float(r["ComprometidoUSD"] or 0) for r in db.query(queries.SQL_COBRANZA_COMPROMETIDA, [p]) if r["IdPersonal"] == aid), 0)
-    cobr = next((float(r["CobradoUSD"] or 0) for r in db.query(queries.SQL_COBRANZA_COBRADA, [p]) if r["IdPersonal"] == aid), 0)
+    def solo_asesor(sql: str) -> dict:
+        return db.query_one(queries.sql_filtrar_asesor(sql), [p, aid]) or {}
+
+    leads = solo_asesor(queries.SQL_LEADS_ASIGNADOS).get("LeadsAsignados", 0)
+    matric = solo_asesor(queries.SQL_MATRICULAS_POR_ASESOR).get("Matriculas", 0)
+    ll = solo_asesor(queries.SQL_LLAMADAS_POR_ASESOR)
+    comp = float(solo_asesor(queries.SQL_COBRANZA_COMPROMETIDA).get("ComprometidoUSD") or 0)
+    cobr = float(solo_asesor(queries.SQL_COBRANZA_COBRADA).get("CobradoUSD") or 0)
 
     tc = (matric / leads) if leads else None
     w = wilson_lb(matric, leads)

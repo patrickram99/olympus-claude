@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.format import output
 
 FORMATOS = {"PAE", "CEP", "PEP", "PAD"}
@@ -50,7 +50,7 @@ def main():
     ap.add_argument("--por-formato", action="store_true",
                     help="Agrega por FORMATO (PAE/CEP/PEP/PAD/otro) en vez de listar cada campaña")
     ap.add_argument("--min-leads", type=int, default=0, help="Excluir campañas con menos de N leads")
-    ap.add_argument("--top", type=int, default=50, help="Mostrar las N con más leads (0 = todas)")
+    ap.add_argument("--top", type=cli.top_type_o_todas, default=50, help="Mostrar las N con más leads (0 = todas)")
     ap.add_argument("--sin-test", action="store_true", help="Excluir TestLead=1")
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output")

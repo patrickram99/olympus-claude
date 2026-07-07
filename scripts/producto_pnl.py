@@ -85,8 +85,8 @@ def main():
 
     # Los montos de pnl.* están en PEN. Con --moneda usd se dividen por USD/PEN.
     div = params.usd_pen if args.moneda == "usd" else 1.0
-    def m(x):  # convierte un monto PEN a la moneda elegida
-        return round(x / div, 2)
+    def m(x):  # convierte un monto PEN a la moneda elegida (None = sin dato)
+        return round(x / div, 2) if x is not None else None
     col = "Valor_USD" if args.moneda == "usd" else "Valor_PEN"
 
     rows = [

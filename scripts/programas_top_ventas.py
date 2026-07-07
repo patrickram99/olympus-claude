@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.calc import CostParams
 from lib.format import output
 
@@ -48,7 +48,7 @@ def main():
     ap = argparse.ArgumentParser(description="Top de programas por ventas con TC cohorte e ingresos")
     ap.add_argument("--desde", default="2026-04-01", help="Fecha inicio inclusiva (YYYY-MM-DD)")
     ap.add_argument("--hasta", default="2026-06-01", help="Fecha fin EXCLUSIVA (YYYY-MM-DD)")
-    ap.add_argument("--top", type=int, default=25, help="Número de programas a mostrar")
+    ap.add_argument("--top", type=cli.top_type, default=25, help="Número de programas a mostrar")
     ap.add_argument("--usd-pen", type=float, help="Override tipo de cambio USD->PEN (default .env / 3.78)")
     ap.add_argument("--max-usd-por-venta", type=float, default=5000.0,
                     help="Ticket comprometido/venta sobre el cual se marca el dato como sospechoso "

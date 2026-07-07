@@ -49,11 +49,13 @@ def _fold(s: str) -> str:
                    if not unicodedata.combining(c))
 
 # Columnas del Excel, en el orden exacto pedido por el usuario.
+# TC = Ins/Leads. TCProc = Ins/(Leads-Reg) = conversión sobre leads YA procesados
+# (todo menos Registrado, que aún no se ha llamado).
 XLSX_COLS = ["Codigo", "Curso", "Leads", "Reg", "Cal", "Pot", "Prom",
-             "Ins", "TC", "Perdidos", "Comprometido", "Cobrado", "%Cob"]
+             "Ins", "TC", "TCProc", "Perdidos", "Comprometido", "Cobrado", "%Cob"]
 # Columnas de la vista rica (tabla/csv): agrega Id y Desarrollador.
 FULL_COLS = ["Id", "Codigo", "Curso", "Desarrollador", "Leads", "Reg", "Cal",
-             "Pot", "Prom", "Ins", "TC", "Perdidos", "Comprometido", "Cobrado", "%Cob"]
+             "Pot", "Prom", "Ins", "TC", "TCProc", "Perdidos", "Comprometido", "Cobrado", "%Cob"]
 
 SQL_PRODUCTOS = """
 SELECT pr.Id,
@@ -130,6 +132,7 @@ def build_rows(usd_pen: float, excluir: str | None, desarrollador: str | None):
         ins, perd, nocal = f.get(3, 0), f.get(7, 0), f.get(2, 0)
         total = reg + cal + pot + prom + ins + perd + nocal
         perdidos = perd + nocal
+        procesados = total - reg  # leads ya llamados (todo menos Registrado)
         compr, cobr = rmap.get(pid, (0.0, 0.0))
         rows.append({
             "Id": pid,
@@ -140,6 +143,7 @@ def build_rows(usd_pen: float, excluir: str | None, desarrollador: str | None):
             "Reg": reg, "Cal": cal, "Pot": pot, "Prom": prom,
             "Ins": ins,
             "TC": round(ins / total * 100, 2) if total else 0.0,
+            "TCProc": round(ins / procesados * 100, 2) if procesados else 0.0,
             "Perdidos": perdidos,
             "Comprometido": round(compr * usd_pen, 2),
             "Cobrado": round(cobr * usd_pen, 2),
@@ -168,7 +172,8 @@ def write_xlsx(rows: list[dict], out_path: str):
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
     money_cols = {XLSX_COLS.index("Comprometido") + 1, XLSX_COLS.index("Cobrado") + 1}
-    tc_cols = {XLSX_COLS.index("TC") + 1, XLSX_COLS.index("%Cob") + 1}
+    tc_cols = {XLSX_COLS.index("TC") + 1, XLSX_COLS.index("TCProc") + 1,
+               XLSX_COLS.index("%Cob") + 1}
     for r, row in enumerate(rows, 2):
         for c, name in enumerate(XLSX_COLS, 1):
             cell = ws.cell(row=r, column=c, value=row[name])

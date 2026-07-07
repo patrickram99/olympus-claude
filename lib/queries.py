@@ -21,7 +21,15 @@ import re
 # Configurable via env var SALES_DATA_START_DATE (default 2026-01-01).
 # ──────────────────────────────────────────────────────────────────────────
 
-SALES_DATA_START = os.environ.get("SALES_DATA_START_DATE", "2026-01-01")
+SALES_DATA_START = os.environ.get("SALES_DATA_START_DATE")
+if SALES_DATA_START is None:
+    SALES_DATA_START = "2026-01-01"
+    import sys as _sys
+    print(
+        f"AVISO: SALES_DATA_START_DATE no está en .env; usando default {SALES_DATA_START} "
+        "(análisis TTFS/cohort/ramp-up dependen de esta fecha).",
+        file=_sys.stderr,
+    )
 
 # Defensive: only accept ISO date strings so we can safely interpolate into SQL.
 if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", SALES_DATA_START):
@@ -50,6 +58,16 @@ def fecha_filter(days: int | None) -> tuple[str, list]:
     if days is None:
         return ("'2000-01-01'", [])
     return ("DATEADD(day, -?, CAST(GETDATE() AS date))", [days])
+
+
+def sql_filtrar_asesor(sql: str) -> str:
+    """
+    Envuelve una query agregada por asesor (debe exponer columna IdPersonal)
+    para filtrar UN solo asesor en el servidor, en vez de traer todos los
+    asesores y filtrar en Python. Agrega un parámetro `?` AL FINAL de los
+    params de la query original: el IdPersonal.
+    """
+    return f"SELECT * FROM (\n{sql}\n) t WHERE t.IdPersonal = ?"
 
 
 # Catalog

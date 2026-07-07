@@ -38,7 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.calc import CostParams
 from lib.format import output
 
@@ -94,7 +94,7 @@ def main():
     ap.add_argument("--min-leads", type=int, default=200,
                     help="Mínimo de leads en ventana para el score; corta denominadores minúsculos "
                          "(productos duplicados/pre-vendidos) que inflan TC y eficiencia (default 200)")
-    ap.add_argument("--top", type=int, default=20, help="Cuántos programas mostrar")
+    ap.add_argument("--top", type=cli.top_type, default=20, help="Cuántos programas mostrar")
     ap.add_argument("--ids", help="Lista de IdProducto separados por coma para restringir a esos programas "
                                   "(p. ej. comparar su historia completa con --desde 2026-01-01)")
     ap.add_argument("--orden", choices=["cobrado", "score", "eficiencia", "tc", "ventas"], default="score",
