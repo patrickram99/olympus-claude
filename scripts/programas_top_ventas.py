@@ -24,7 +24,6 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -34,13 +33,11 @@ from lib import cli, db, queries
 from lib.calc import CostParams
 from lib.format import output
 
-ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
-
 
 def main():
     ap = argparse.ArgumentParser(description="Top de programas por ventas con TC cohorte e ingresos")
-    ap.add_argument("--desde", default="2026-04-01", help="Fecha inicio inclusiva (YYYY-MM-DD)")
-    ap.add_argument("--hasta", default="2026-06-01", help="Fecha fin EXCLUSIVA (YYYY-MM-DD)")
+    ap.add_argument("--desde", type=cli.iso_date, default="2026-04-01", help="Fecha inicio inclusiva (YYYY-MM-DD)")
+    ap.add_argument("--hasta", type=cli.iso_date, default="2026-06-01", help="Fecha fin EXCLUSIVA (YYYY-MM-DD)")
     ap.add_argument("--top", type=cli.top_type, default=25, help="Número de programas a mostrar")
     ap.add_argument("--usd-pen", type=float, help="Override tipo de cambio USD->PEN (default .env / 3.78)")
     ap.add_argument("--max-usd-por-venta", type=float, default=5000.0,
@@ -49,11 +46,6 @@ def main():
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output")
     args = ap.parse_args()
-
-    for label, val in (("--desde", args.desde), ("--hasta", args.hasta)):
-        if not ISO.fullmatch(val):
-            print(f"ERROR: {label} debe ser YYYY-MM-DD, recibido: {val!r}", file=sys.stderr)
-            sys.exit(2)
 
     usd_pen = args.usd_pen if args.usd_pen is not None else CostParams.from_env().usd_pen
 

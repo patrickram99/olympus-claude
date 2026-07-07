@@ -255,6 +255,12 @@ Para el **agregado de un portafolio por encargado** hay `portafolio_encargado.py
 - `references/calculations.md` — Wilson, FTE, sensibilidad, breakeven, BCG quadrants. Con worked example de imbpepkeyacc05261.
 - `references/pitfalls.md` — 19 bugs reales con root cause + fix.
 
+## CLI conventions
+
+- **Nombres canónicos de parámetros**: `--periodo N` (últimos N días), `--desde/--hasta` (ventana ISO `[desde, hasta)`, hasta exclusivo), `--top N` (filas, máx 500). Los nombres históricos siguen funcionando como alias (`--since` ≡ `--desde` en `time_to_first_sale.py` y `cohort_ramp.py`).
+- **Exit codes**: `0` ok · `1` sin resultados (id no encontrado, producto sin leads) · `2` error de entorno o parámetros (.env incompleto, fecha malformada) · `3` faltan datos que debe dar el usuario (protocolo del forecast).
+- **Proveedor de BD**: se elige con `DB_DIALECT` en `.env` (hoy `mssql`; `postgres` stub para la migración). Driver, connection string y TLS/certificados viven en `lib/db_backends/` — no tocar scripts al cambiar de proveedor.
+
 ## Output conventions
 
 - **Default output**: pretty table a stdout. Para guardar: `--fmt csv -o archivo.csv`.

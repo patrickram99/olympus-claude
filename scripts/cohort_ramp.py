@@ -23,10 +23,10 @@ Matrículas: dedup con `COUNT(DISTINCT IdOportunidad)` para evitar el bug
 de las ~120 oportunidades con múltiples filas IdEstado=3.
 
 Uso:
-  python scripts/cohort_ramp.py --since 2026-01-01
-  python scripts/cohort_ramp.py --since 2026-03-01 --meses 4
-  python scripts/cohort_ramp.py --hr-mode --since 2025-01-01
-  python scripts/cohort_ramp.py --since 2026-01-01 -o ramp.csv --fmt csv
+  python scripts/cohort_ramp.py --desde 2026-01-01        # (alias: --since)
+  python scripts/cohort_ramp.py --desde 2026-03-01 --meses 4
+  python scripts/cohort_ramp.py --hr-mode --desde 2025-01-01
+  python scripts/cohort_ramp.py --desde 2026-01-01 -o ramp.csv --fmt csv
 """
 from __future__ import annotations
 
@@ -36,13 +36,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.format import output
 
 
 def main():
     ap = argparse.ArgumentParser(description="Ramp-up por asesor en los primeros N meses")
-    ap.add_argument("--since", default="2020-01-01", help="Filtrar FechaIngreso efectiva >= esta fecha (YYYY-MM-DD)")
+    cli.add_desde(ap, default="2020-01-01",
+                  help_text="Filtrar FechaIngreso efectiva >= esta fecha (YYYY-MM-DD)")
     ap.add_argument("--meses", type=int, default=6, help="Cantidad de meses a mostrar (default 6)")
     ap.add_argument("--hr-mode", action="store_true", help="Usar FechaIngreso real (para análisis HR/rotación).")
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
@@ -55,9 +56,9 @@ def main():
     sql_leads = queries.sql_cohort_leads(hr_mode=args.hr_mode)
     sql_matric = queries.sql_cohort_matriculas(hr_mode=args.hr_mode)
 
-    asesores = db.query(sql_ases, [args.since])
-    leads_rows = db.query(sql_leads, [args.since])
-    matric_rows = db.query(sql_matric, [args.since])
+    asesores = db.query(sql_ases, [args.desde])
+    leads_rows = db.query(sql_leads, [args.desde])
+    matric_rows = db.query(sql_matric, [args.desde])
 
     # (IdPersonal, MesOffset) → count
     leads_by = {(int(r["IdPersonal"]), int(r["MesOffset"])): int(r["LeadsAsignados"]) for r in leads_rows}
@@ -92,7 +93,7 @@ def main():
 
     modo = "HR (FechaIngreso real)" if args.hr_mode else f"sales (cap={queries.SALES_DATA_START})"
     print(
-        f"\n>>> Modo: {modo} · Cohorte >= {args.since} · {len(asesores)} asesores · ventana {n_meses} meses\n",
+        f"\n>>> Modo: {modo} · Cohorte >= {args.desde} · {len(asesores)} asesores · ventana {n_meses} meses\n",
         file=sys.stderr,
     )
     output(rows, fmt=args.fmt, out_path=args.output)

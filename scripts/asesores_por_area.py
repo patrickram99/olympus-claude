@@ -22,18 +22,15 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.calc import wilson_lb
 from lib.format import output
-
-ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 # Clasificación de área por patrón en el nombre del producto (LIKE, case-insensitive).
 AREA_CASE = """
@@ -70,16 +67,12 @@ AREAS = ["Finanzas", "RRHH", "Otras"]
 
 def main():
     ap = argparse.ArgumentParser(description="Comparación de asesores por área (Finanzas/RRHH/Otras)")
-    ap.add_argument("--desde", default="2026-01-01", help="Actividad con FechaCreacion >= (YYYY-MM-DD)")
+    ap.add_argument("--desde", type=cli.iso_date, default="2026-01-01", help="Actividad con FechaCreacion >= (YYYY-MM-DD)")
     ap.add_argument("--min-leads", type=int, default=80,
                     help="Mínimo de leads en su área hogar para incluir al asesor en la vista por asesor")
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output")
     args = ap.parse_args()
-
-    if not ISO.fullmatch(args.desde):
-        print(f"ERROR: --desde debe ser YYYY-MM-DD, recibido: {args.desde!r}", file=sys.stderr)
-        sys.exit(2)
 
     lm = db.query(SQL_LEADS_MATRIC, [args.desde])
     ll = db.query(SQL_LLAMADAS, [args.desde])

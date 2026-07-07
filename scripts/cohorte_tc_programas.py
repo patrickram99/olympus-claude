@@ -36,10 +36,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db
+from lib import cli, db
 from lib.format import output
 
-ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 SUFFIX = re.compile(r"^(?P<fam>.+?)\d{2}\d{2}\d$")   # familia = código sin MMYYN
 MESES = {1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun",
          7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"}
@@ -70,27 +69,23 @@ def family_of(code: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser(description="Comparación de TC de cohorte por mes de captación, por programa")
-    ap.add_argument("--desde", default="2026-01-01", help="Sólo leads creados >= esta fecha (YYYY-MM-DD)")
+    ap.add_argument("--desde", type=cli.iso_date, default="2026-01-01", help="Sólo leads creados >= esta fecha (YYYY-MM-DD)")
     ap.add_argument("--mat-days", type=int, default=30, help="Ventana de madurez en días para la TC (default 30)")
     ap.add_argument("--min-leads", type=int, default=100, help="Mínimo de leads para incluir una cohorte familia×mes")
-    ap.add_argument("--hoy", help="Fecha de corte (YYYY-MM-DD); default hoy del sistema")
+    ap.add_argument("--hoy", type=cli.iso_date, help="Fecha de corte (YYYY-MM-DD); default hoy del sistema")
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output")
     args = ap.parse_args()
 
-    if not ISO.fullmatch(args.desde):
-        print(f"ERROR: --desde debe ser YYYY-MM-DD, recibido: {args.desde!r}", file=sys.stderr)
-        sys.exit(2)
-    if args.hoy and not ISO.fullmatch(args.hoy):
-        print(f"ERROR: --hoy debe ser YYYY-MM-DD, recibido: {args.hoy!r}", file=sys.stderr)
-        sys.exit(2)
     hoy = date.fromisoformat(args.hoy) if args.hoy else date.today()
 
     raw = db.query(SQL, [args.mat_days, args.desde])
 
     # familia -> (Y,M) -> agregados
     fams: dict[str, dict] = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))  # [Leads, ConvMat, ConvAll]
-    fam_name: dict[str, str] = {}
+    # fam -> ((Y,M), nombre): se queda el nombre de la cohorte más reciente,
+    # determinista (antes dependía del orden en que la BD devolviera las filas).
+    _fam_latest: dict[str, tuple] = {}
     for r in raw:
         fam = family_of(r["Codigo"])
         ym = (int(r["Y"]), int(r["M"]))
@@ -98,7 +93,11 @@ def main():
         agg[0] += int(r["Leads"] or 0)
         agg[1] += int(r["ConvMat"] or 0)
         agg[2] += int(r["ConvAll"] or 0)
-        fam_name.setdefault(fam, (r["Nombre"] or "").strip())
+        prev = _fam_latest.get(fam)
+        cand = (ym, (r["Nombre"] or "").strip())
+        if prev is None or cand > prev:   # desempata por nombre si el mes coincide
+            _fam_latest[fam] = cand
+    fam_name = {fam: nombre for fam, (_, nombre) in _fam_latest.items()}
 
     def evaluable(ym) -> bool:
         # el mes es evaluable a mat-days si TODO el mes ya cumplió la ventana
@@ -125,7 +124,7 @@ def main():
             "TC_ult": tc(ult),
             "ΔTCpp": round(tc(ult) - tc(prim), 2),
         })
-    comp_rows.sort(key=lambda x: -x["ΔTCpp"])
+    comp_rows.sort(key=lambda x: (-x["ΔTCpp"], x["Programa"]))  # desempate estable
 
     # ── Tendencia agregada por mes de captación (todas las familias) ───────────
     by_month_ev = defaultdict(lambda: [0, 0])

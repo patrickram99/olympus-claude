@@ -31,7 +31,6 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -41,8 +40,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import cli, db, queries
 from lib.calc import CostParams
 from lib.format import output
-
-ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 # Llamadas (delta de contadores acumulativos) atribuidas al producto del lead.
 SQL_LLAMADAS_POR_PRODUCTO = f"""
@@ -70,9 +67,9 @@ def _norm(vals: dict, key, invert=False):
 def main():
     ap = argparse.ArgumentParser(description="Performance de programas: TC + llamadas (esfuerzo) + dinero")
     ap.add_argument("--periodo", type=int, default=60, help="Ventana en días hacia atrás desde hoy (default 60)")
-    ap.add_argument("--desde", help="Override fecha inicio inclusiva (YYYY-MM-DD)")
-    ap.add_argument("--hasta", help="Override fecha fin EXCLUSIVA (YYYY-MM-DD)")
-    ap.add_argument("--hoy", help="Fecha de corte (YYYY-MM-DD); default hoy del sistema")
+    ap.add_argument("--desde", type=cli.iso_date, help="Override fecha inicio inclusiva (YYYY-MM-DD)")
+    ap.add_argument("--hasta", type=cli.iso_date, help="Override fecha fin EXCLUSIVA (YYYY-MM-DD)")
+    ap.add_argument("--hoy", type=cli.iso_date, help="Fecha de corte (YYYY-MM-DD); default hoy del sistema")
     ap.add_argument("--min-ventas", type=int, default=5, help="Mínimo de ventas para el ranking/score (default 5)")
     ap.add_argument("--min-leads", type=int, default=200,
                     help="Mínimo de leads en ventana para el score; corta denominadores minúsculos "
@@ -93,10 +90,6 @@ def main():
     else:
         desde = (hoy - timedelta(days=args.periodo)).isoformat()
         hasta = (hoy + timedelta(days=1)).isoformat()   # incluir todo hoy
-    for label, val in (("--desde", desde), ("--hasta", hasta)):
-        if not ISO.fullmatch(val):
-            print(f"ERROR: {label} debe ser YYYY-MM-DD, recibido: {val!r}", file=sys.stderr)
-            sys.exit(2)
 
     usd_pen = args.usd_pen if args.usd_pen is not None else CostParams.from_env().usd_pen
 
