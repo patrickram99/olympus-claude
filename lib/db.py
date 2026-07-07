@@ -14,16 +14,11 @@ Loads .env from the skill root and exposes:
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Iterable
-
-from dotenv import load_dotenv
 
 from .db_backends import get_backend
 
-# Load .env from the package root (parent of lib/)
-_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_ROOT / ".env")
+# El .env se carga en lib/__init__.py (cubre cualquier orden de imports de lib.*)
 
 _backend = get_backend(os.environ.get("DB_DIALECT", "mssql"))
 

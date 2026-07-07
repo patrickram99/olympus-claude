@@ -45,25 +45,14 @@ from lib.format import output
 ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 # Llamadas (delta de contadores acumulativos) atribuidas al producto del lead.
-SQL_LLAMADAS_POR_PRODUCTO = """
+SQL_LLAMADAS_POR_PRODUCTO = f"""
 SELECT o.IdProducto AS P,
   SUM(q.dCc) AS Contestadas,
   SUM(q.dCn) AS NoContestadas
-FROM (
-  SELECT he.IdOportunidad,
-    CASE WHEN he.CantidadLlamadasContestadas
-           - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0) > 0
-         THEN he.CantidadLlamadasContestadas
-           - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0)
-         ELSE 0 END AS dCc,
-    CASE WHEN he.CantidadLlamadasNoContestadas
-           - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0) > 0
-         THEN he.CantidadLlamadasNoContestadas
-           - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0)
-         ELSE 0 END AS dCn
-  FROM adm.HistorialEstado he
-  WHERE he.Estado = 1 AND he.FechaCreacion >= ? AND he.FechaCreacion < ?
-) q
+FROM ({queries.sql_llamadas_delta(
+    "he.IdOportunidad",
+    "he.FechaCreacion >= ? AND he.FechaCreacion < ?",
+)}) q
 INNER JOIN adm.Oportunidad o ON o.Id = q.IdOportunidad AND o.Estado = 1
 GROUP BY o.IdProducto
 """
@@ -79,12 +68,6 @@ def _norm(vals: dict, key, invert=False):
 
 
 def main():
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except (AttributeError, ValueError):
-            pass
-
     ap = argparse.ArgumentParser(description="Performance de programas: TC + llamadas (esfuerzo) + dinero")
     ap.add_argument("--periodo", type=int, default=60, help="Ventana en días hacia atrás desde hoy (default 60)")
     ap.add_argument("--desde", help="Override fecha inicio inclusiva (YYYY-MM-DD)")
@@ -125,7 +108,7 @@ def main():
             print(f"ERROR: --ids debe ser una lista de enteros separados por coma, recibido: {args.ids!r}", file=sys.stderr)
             sys.exit(2)
 
-    ventas_rows = db.query(queries.SQL_PROGRAMAS_TOP_VENTAS, [desde, hasta] * 5)
+    ventas_rows = db.query(queries.SQL_PROGRAMAS_TOP_VENTAS, [desde, hasta])
     if ids is not None:
         ventas_rows = [r for r in ventas_rows if int(r["Id"]) in ids]
     llam_rows = db.query(SQL_LLAMADAS_POR_PRODUCTO, [desde, hasta])

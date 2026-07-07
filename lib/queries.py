@@ -70,6 +70,42 @@ def sql_filtrar_asesor(sql: str) -> str:
     return f"SELECT * FROM (\n{sql}\n) t WHERE t.IdPersonal = ?"
 
 
+def matricula_evento(alias: str = "he") -> str:
+    """
+    Predicado canónico de "evento de matrícula" en HistorialEstado: fila viva
+    (Estado=1, soft-delete) que llegó a estado Matriculado (IdEstado=3).
+    El dedup por oportunidad se hace aparte (COUNT(DISTINCT IdOportunidad) o
+    SELECT DISTINCT), porque una oportunidad puede tener varias filas en 3.
+    ÚNICA fuente de esta regla — si cambia el enum de estados, tocar solo aquí.
+    """
+    return f"{alias}.Estado = 1 AND {alias}.IdEstado = 3"
+
+
+def sql_llamadas_delta(select_cols: str, where: str) -> str:
+    """
+    Subconsulta con el delta REAL de llamadas por fila de HistorialEstado.
+    Los contadores CantidadLlamadas* son ACUMULATIVOS por oportunidad: el delta
+    es fila − LAG(fila) sobre la misma oportunidad, con negativos clampados a 0
+    (los contadores a veces se resetean). ÚNICA fuente del patrón — antes vivía
+    copiado en 4 sitios.
+
+    select_cols: columnas de he.* a exponer junto a dCc/dCn.
+    where: predicado adicional con placeholders `?` (se ANDea a he.Estado=1).
+    """
+    def _delta(col: str) -> str:
+        lag = (f"ISNULL(LAG(he.{col}) OVER "
+               f"(PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0)")
+        return f"CASE WHEN he.{col} - {lag} > 0 THEN he.{col} - {lag} ELSE 0 END"
+
+    return f"""
+  SELECT {select_cols},
+    {_delta("CantidadLlamadasContestadas")} AS dCc,
+    {_delta("CantidadLlamadasNoContestadas")} AS dCn
+  FROM adm.HistorialEstado he
+  WHERE he.Estado = 1 AND {where}
+"""
+
+
 # Catalog
 SQL_ASESORES_ACTIVOS = """
 SELECT
@@ -97,46 +133,34 @@ GROUP BY q.IdPersonal
 """
 
 # Llamadas por asesor (delta + días activos)
-SQL_LLAMADAS_POR_ASESOR = """
+SQL_LLAMADAS_POR_ASESOR = f"""
 SELECT q.IdPersonal,
   SUM(q.dCc) AS Contestadas,
   SUM(q.dCn) AS NoContestadas,
   COUNT(DISTINCT CAST(q.FechaCreacion AS date)) AS DiasActivos
-FROM (
-  SELECT he.IdPersonal, he.FechaCreacion,
-    CASE WHEN he.CantidadLlamadasContestadas
-           - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0) > 0
-         THEN he.CantidadLlamadasContestadas
-           - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0)
-         ELSE 0 END AS dCc,
-    CASE WHEN he.CantidadLlamadasNoContestadas
-           - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0) > 0
-         THEN he.CantidadLlamadasNoContestadas
-           - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0)
-         ELSE 0 END AS dCn
-  FROM adm.HistorialEstado he
-  WHERE he.Estado = 1 AND he.IdPersonal IS NOT NULL
-    AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
-) q
+FROM ({sql_llamadas_delta(
+    "he.IdPersonal, he.FechaCreacion",
+    "he.IdPersonal IS NOT NULL AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))",
+)}) q
 GROUP BY q.IdPersonal
 """
 
 # Matriculaciones por asesor
-SQL_MATRICULAS_POR_ASESOR = """
+SQL_MATRICULAS_POR_ASESOR = f"""
 SELECT he.IdPersonal, COUNT(DISTINCT he.IdOportunidad) AS Matriculas
 FROM adm.HistorialEstado he
-WHERE he.Estado = 1 AND he.IdEstado = 3 AND he.IdPersonal IS NOT NULL
+WHERE {matricula_evento()} AND he.IdPersonal IS NOT NULL
   AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
 GROUP BY he.IdPersonal
 """
 
 # Cobranza comprometida por asesor
-SQL_COBRANZA_COMPROMETIDA = """
+SQL_COBRANZA_COMPROMETIDA = f"""
 SELECT q.IdPersonal, SUM(cp.Total) AS ComprometidoUSD
 FROM (
   SELECT he.IdPersonal, he.IdOportunidad
   FROM adm.HistorialEstado he
-  WHERE he.Estado = 1 AND he.IdEstado = 3 AND he.IdPersonal IS NOT NULL
+  WHERE {matricula_evento()} AND he.IdPersonal IS NOT NULL
     AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
   GROUP BY he.IdPersonal, he.IdOportunidad
 ) q
@@ -145,12 +169,12 @@ GROUP BY q.IdPersonal
 """
 
 # Cobranza cobrada por asesor
-SQL_COBRANZA_COBRADA = """
+SQL_COBRANZA_COBRADA = f"""
 SELECT he.IdPersonal, SUM(pago.Monto) AS CobradoUSD
 FROM adm.HistorialEstado he
 INNER JOIN adm.CobranzaPlan cp ON cp.IdOportunidad = he.IdOportunidad AND cp.Estado = 1
 INNER JOIN adm.CobranzaPago pago ON pago.IdCobranzaPlan = cp.Id AND pago.Estado = 1
-WHERE he.Estado = 1 AND he.IdEstado = 3 AND he.IdPersonal IS NOT NULL
+WHERE {matricula_evento()} AND he.IdPersonal IS NOT NULL
   AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
 GROUP BY he.IdPersonal
 """
@@ -174,27 +198,15 @@ WHERE op.Estado = 1
 """
 
 # Llamadas por hora del día
-SQL_CALLS_BY_HOUR = """
+SQL_CALLS_BY_HOUR = f"""
 SELECT DATEPART(hour, q.FechaCreacion) AS Hora,
   SUM(q.dCc) AS Contestadas,
   SUM(q.dCn) AS NoContestadas,
   SUM(q.dCc + q.dCn) AS Total
-FROM (
-  SELECT he.FechaCreacion, he.IdPersonal,
-    CASE WHEN he.CantidadLlamadasContestadas
-           - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0) > 0
-         THEN he.CantidadLlamadasContestadas
-           - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0)
-         ELSE 0 END AS dCc,
-    CASE WHEN he.CantidadLlamadasNoContestadas
-           - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0) > 0
-         THEN he.CantidadLlamadasNoContestadas
-           - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id), 0)
-         ELSE 0 END AS dCn
-  FROM adm.HistorialEstado he
-  WHERE he.Estado = 1 AND he.IdPersonal IS NOT NULL
-    AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
-) q
+FROM ({sql_llamadas_delta(
+    "he.FechaCreacion, he.IdPersonal",
+    "he.IdPersonal IS NOT NULL AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))",
+)}) q
 GROUP BY DATEPART(hour, q.FechaCreacion)
 """
 
@@ -228,7 +240,7 @@ GROUP BY pa.Nombre
 """
 
 # Matriculados por país
-SQL_MATRIC_POR_PAIS = """
+SQL_MATRIC_POR_PAIS = f"""
 SELECT pa.Nombre AS Pais, COUNT(DISTINCT h.IdOportunidad) AS Matriculados
 FROM adm.HistorialEstado h
 INNER JOIN adm.Oportunidad op       ON op.Id = h.IdOportunidad AND op.Estado = 1
@@ -236,7 +248,7 @@ INNER JOIN adm.Producto pr          ON pr.Id = op.IdProducto AND pr.Estado = 1
 INNER JOIN adm.PotencialCliente pc  ON pc.Id = op.IdPotencialCliente
 INNER JOIN adm.Persona per          ON per.Id = pc.IdPersona
 INNER JOIN mdm.Pais pa              ON pa.Id = per.IdPais
-WHERE h.Estado = 1 AND h.IdEstado = 3
+WHERE {matricula_evento('h')}
   AND pr.Nombre LIKE ?
 GROUP BY pa.Nombre
 """
@@ -258,7 +270,7 @@ INNER JOIN (
   SELECT op.IdPersonal, MIN(h.FechaCreacion) AS PrimeraVenta
   FROM adm.HistorialEstado h
   INNER JOIN adm.Oportunidad op ON op.Id = h.IdOportunidad AND op.Estado = 1
-  WHERE h.Estado = 1 AND h.IdEstado = 3 AND op.IdPersonal IS NOT NULL
+  WHERE {matricula_evento('h')} AND op.IdPersonal IS NOT NULL
   GROUP BY op.IdPersonal
 ) v ON v.IdPersonal = p.Id
 WHERE p.Estado = 1
@@ -279,7 +291,7 @@ ORDER BY pr.Id DESC
 """
 
 # KPIs de un producto específico
-SQL_PRODUCT_KPIS = """
+SQL_PRODUCT_KPIS = f"""
 SELECT
   (SELECT COUNT(DISTINCT op.Id)
      FROM adm.Oportunidad op
@@ -292,7 +304,7 @@ SELECT
   (SELECT COUNT(DISTINCT h.IdOportunidad)
      FROM adm.HistorialEstado h
      INNER JOIN adm.Oportunidad o ON o.Id = h.IdOportunidad AND o.Estado = 1
-     WHERE o.IdProducto = ? AND h.Estado = 1 AND h.IdEstado = 3) AS Matriculados,
+     WHERE o.IdProducto = ? AND {matricula_evento('h')}) AS Matriculados,
   (SELECT SUM(cp.Total)
      FROM adm.CobranzaPlan cp
      INNER JOIN adm.Oportunidad o ON o.Id = cp.IdOportunidad
@@ -359,24 +371,24 @@ GROUP BY op.IdProducto, pr.Nombre
 """
 
 # Matrículas por (asesor, producto). Params: IdPersonal, days.
-SQL_MATRIC_ASESOR_X_PRODUCTO = """
+SQL_MATRIC_ASESOR_X_PRODUCTO = f"""
 SELECT op.IdProducto, COUNT(DISTINCT he.IdOportunidad) AS Matric
 FROM adm.HistorialEstado he
 INNER JOIN adm.Oportunidad op ON op.Id = he.IdOportunidad AND op.Estado = 1
-WHERE he.Estado = 1 AND he.IdEstado = 3 AND he.IdPersonal = ?
+WHERE {matricula_evento()} AND he.IdPersonal = ?
   AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
 GROUP BY op.IdProducto
 """
 
 # Cobrado por (asesor, producto) — sólo oportunidades que el asesor matriculó.
 # Params: IdPersonal, days.
-SQL_COBRADO_ASESOR_X_PRODUCTO = """
+SQL_COBRADO_ASESOR_X_PRODUCTO = f"""
 SELECT op.IdProducto, SUM(pago.Monto) AS CobradoUSD
 FROM adm.HistorialEstado he
 INNER JOIN adm.Oportunidad op    ON op.Id = he.IdOportunidad AND op.Estado = 1
 INNER JOIN adm.CobranzaPlan cp   ON cp.IdOportunidad = op.Id AND cp.Estado = 1
 INNER JOIN adm.CobranzaPago pago ON pago.IdCobranzaPlan = cp.Id AND pago.Estado = 1
-WHERE he.Estado = 1 AND he.IdEstado = 3 AND he.IdPersonal = ?
+WHERE {matricula_evento()} AND he.IdPersonal = ?
   AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
 GROUP BY op.IdProducto
 """
@@ -395,9 +407,11 @@ GROUP BY op.IdProducto
 #   - CobradoUSD    = SUM(CobranzaPago.Monto) de esas mismas oportunidades.
 #
 # Inline subqueries (no CTE) por compatibilidad con el MCP; el ORDER BY / TOP
-# se hace en el cliente. Params (pyodbc, en orden): desde, hasta repetidos 5x.
+# se hace en el cliente. Params (pyodbc, en orden): desde, hasta (una sola vez;
+# el DECLARE los propaga a las 5 subconsultas).
 # ────────────────────────────────────────────────────────────────────────
-SQL_PROGRAMAS_TOP_VENTAS = """
+SQL_PROGRAMAS_TOP_VENTAS = f"""
+DECLARE @desde date = ?, @hasta date = ?;
 SELECT pr.Id,
   ISNULL(pr.CodigoLanzamiento, '') AS Codigo,
   pr.Nombre,
@@ -411,20 +425,20 @@ INNER JOIN (
   SELECT op.IdProducto, COUNT(DISTINCT h.IdOportunidad) AS Ventas
   FROM adm.HistorialEstado h
   INNER JOIN adm.Oportunidad op ON op.Id = h.IdOportunidad AND op.Estado = 1
-  WHERE h.Estado = 1 AND h.IdEstado = 3 AND h.FechaCreacion >= ? AND h.FechaCreacion < ?
+  WHERE {matricula_evento('h')} AND h.FechaCreacion >= @desde AND h.FechaCreacion < @hasta
   GROUP BY op.IdProducto
 ) v ON v.IdProducto = pr.Id
 LEFT JOIN (
   SELECT op.IdProducto, COUNT(DISTINCT op.Id) AS Leads
   FROM adm.Oportunidad op
-  WHERE op.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
+  WHERE op.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
   GROUP BY op.IdProducto
 ) l ON l.IdProducto = pr.Id
 LEFT JOIN (
   SELECT op.IdProducto, COUNT(DISTINCT op.Id) AS Conv
   FROM adm.Oportunidad op
-  INNER JOIN adm.HistorialEstado h ON h.IdOportunidad = op.Id AND h.Estado = 1 AND h.IdEstado = 3
-  WHERE op.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
+  INNER JOIN adm.HistorialEstado h ON h.IdOportunidad = op.Id AND {matricula_evento('h')}
+  WHERE op.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
   GROUP BY op.IdProducto
 ) c ON c.IdProducto = pr.Id
 LEFT JOIN (
@@ -433,7 +447,7 @@ LEFT JOIN (
     SELECT DISTINCT op.IdProducto, op.Id AS IdOportunidad
     FROM adm.HistorialEstado h
     INNER JOIN adm.Oportunidad op ON op.Id = h.IdOportunidad AND op.Estado = 1
-    WHERE h.Estado = 1 AND h.IdEstado = 3 AND h.FechaCreacion >= ? AND h.FechaCreacion < ?
+    WHERE {matricula_evento('h')} AND h.FechaCreacion >= @desde AND h.FechaCreacion < @hasta
   ) q
   INNER JOIN adm.CobranzaPlan cp ON cp.IdOportunidad = q.IdOportunidad AND cp.Estado = 1
   GROUP BY q.IdProducto
@@ -444,7 +458,7 @@ LEFT JOIN (
     SELECT DISTINCT op.IdProducto, op.Id AS IdOportunidad
     FROM adm.HistorialEstado h
     INNER JOIN adm.Oportunidad op ON op.Id = h.IdOportunidad AND op.Estado = 1
-    WHERE h.Estado = 1 AND h.IdEstado = 3 AND h.FechaCreacion >= ? AND h.FechaCreacion < ?
+    WHERE {matricula_evento('h')} AND h.FechaCreacion >= @desde AND h.FechaCreacion < @hasta
   ) q
   INNER JOIN adm.CobranzaPlan cp   ON cp.IdOportunidad = q.IdOportunidad AND cp.Estado = 1
   INNER JOIN adm.CobranzaPago pago ON pago.IdCobranzaPlan = cp.Id AND pago.Estado = 1
@@ -484,7 +498,7 @@ GROUP BY op.IdProducto
 SQL_LEADS_VENTANA_POR_PRODUCTO = """
 SELECT op.IdProducto AS P, COUNT(DISTINCT op.Id) AS LeadsVentana
 FROM adm.Oportunidad op
-WHERE op.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
+WHERE op.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
 GROUP BY op.IdProducto
 """
 
@@ -500,7 +514,7 @@ GROUP BY op.IdProducto
 
 # Comprometido por producto de matrículas cerradas en una ventana.
 # Params: ventana_desde, ventana_hasta (YYYY-MM-DD, hasta exclusivo).
-SQL_COMPROMETIDO_VENTANA_POR_PRODUCTO = """
+SQL_COMPROMETIDO_VENTANA_POR_PRODUCTO = f"""
 SELECT op.IdProducto AS P,
   COUNT(DISTINCT op.Id) AS MatricVentana,
   SUM(cp.Total) AS CompVentanaUSD
@@ -508,7 +522,7 @@ FROM adm.Oportunidad op
 INNER JOIN (
   SELECT he.IdOportunidad, MIN(he.FechaCreacion) AS FMat
   FROM adm.HistorialEstado he
-  WHERE he.Estado = 1 AND he.IdEstado = 3
+  WHERE {matricula_evento()}
   GROUP BY he.IdOportunidad
 ) m ON m.IdOportunidad = op.Id AND m.FMat >= ? AND m.FMat < ?
 INNER JOIN adm.CobranzaPlan cp ON cp.IdOportunidad = op.Id AND cp.Estado = 1
@@ -527,13 +541,13 @@ SELECT op.IdProducto AS P, SUM(pago.Monto) AS CobradoUSD
 FROM adm.CobranzaPago pago
 INNER JOIN adm.CobranzaPlan cp   ON cp.Id = pago.IdCobranzaPlan AND cp.Estado = 1
 INNER JOIN adm.Oportunidad op    ON op.Id = cp.IdOportunidad AND op.Estado = 1
-WHERE pago.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
+WHERE pago.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
 GROUP BY op.IdProducto
 """
 
 # Comprometido = plan total de las oportunidades creadas en la ventana que matricularon
 # (estado 3), sin importar cuándo se matricularon. MatricVentana cuenta esa misma cohorte.
-SQL_COMPROMETIDO_COHORTE_POR_PRODUCTO = """
+SQL_COMPROMETIDO_COHORTE_POR_PRODUCTO = f"""
 SELECT op.IdProducto AS P,
   COUNT(DISTINCT op.Id) AS MatricVentana,
   SUM(cp.Total) AS CompVentanaUSD
@@ -541,11 +555,11 @@ FROM adm.Oportunidad op
 INNER JOIN (
   SELECT he.IdOportunidad
   FROM adm.HistorialEstado he
-  WHERE he.Estado = 1 AND he.IdEstado = 3
+  WHERE {matricula_evento()}
   GROUP BY he.IdOportunidad
 ) m ON m.IdOportunidad = op.Id
 INNER JOIN adm.CobranzaPlan cp ON cp.IdOportunidad = op.Id AND cp.Estado = 1
-WHERE op.Estado = 1 AND op.FechaCreacion >= ? AND op.FechaCreacion < ?
+WHERE op.Estado = 1 AND op.FechaCreacion >= @desde AND op.FechaCreacion < @hasta
 GROUP BY op.IdProducto
 """
 
@@ -613,7 +627,7 @@ SELECT he.IdPersonal,
 FROM adm.HistorialEstado he
 INNER JOIN adm.Personal p ON p.Id = he.IdPersonal AND p.Estado = 1
   AND ISNULL(p.Cesado, 0) = 0 AND p.FechaIngreso IS NOT NULL AND {ingreso} >= ?
-WHERE he.Estado = 1 AND he.IdEstado = 3 AND he.IdPersonal IS NOT NULL
+WHERE {matricula_evento()} AND he.IdPersonal IS NOT NULL
   AND he.FechaCreacion >= {ingreso}
 GROUP BY he.IdPersonal, DATEDIFF(month, {ingreso}, he.FechaCreacion) + 1
 """

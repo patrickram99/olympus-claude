@@ -38,13 +38,6 @@ ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def main():
-    # Windows consoles default to cp1252; force UTF-8 so acentos/markers no crashean.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except (AttributeError, ValueError):
-            pass
-
     ap = argparse.ArgumentParser(description="Top de programas por ventas con TC cohorte e ingresos")
     ap.add_argument("--desde", default="2026-04-01", help="Fecha inicio inclusiva (YYYY-MM-DD)")
     ap.add_argument("--hasta", default="2026-06-01", help="Fecha fin EXCLUSIVA (YYYY-MM-DD)")
@@ -64,9 +57,7 @@ def main():
 
     usd_pen = args.usd_pen if args.usd_pen is not None else CostParams.from_env().usd_pen
 
-    # 10 params: (desde, hasta) repetidos para las 5 subconsultas.
-    params = [args.desde, args.hasta] * 5
-    raw = db.query(queries.SQL_PROGRAMAS_TOP_VENTAS, params)
+    raw = db.query(queries.SQL_PROGRAMAS_TOP_VENTAS, [args.desde, args.hasta])
 
     rows = []
     for r in raw:

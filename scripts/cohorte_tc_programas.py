@@ -69,12 +69,6 @@ def family_of(code: str) -> str:
 
 
 def main():
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except (AttributeError, ValueError):
-            pass
-
     ap = argparse.ArgumentParser(description="Comparación de TC de cohorte por mes de captación, por programa")
     ap.add_argument("--desde", default="2026-01-01", help="Sólo leads creados >= esta fecha (YYYY-MM-DD)")
     ap.add_argument("--mat-days", type=int, default=30, help="Ventana de madurez en días para la TC (default 30)")

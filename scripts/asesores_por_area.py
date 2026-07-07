@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db
+from lib import db, queries
 from lib.calc import wilson_lb
 from lib.format import output
 
@@ -56,15 +56,10 @@ GROUP BY he.IdPersonal, {AREA_CASE}
 
 SQL_LLAMADAS = f"""
 SELECT q.IdPersonal, {AREA_CASE} AS Area, SUM(q.dCc + q.dCn) AS Llamadas
-FROM (
-  SELECT he.IdPersonal, he.IdOportunidad,
-    CASE WHEN he.CantidadLlamadasContestadas - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id),0) > 0
-         THEN he.CantidadLlamadasContestadas - ISNULL(LAG(he.CantidadLlamadasContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id),0) ELSE 0 END AS dCc,
-    CASE WHEN he.CantidadLlamadasNoContestadas - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id),0) > 0
-         THEN he.CantidadLlamadasNoContestadas - ISNULL(LAG(he.CantidadLlamadasNoContestadas) OVER (PARTITION BY he.IdOportunidad ORDER BY he.FechaCreacion, he.Id),0) ELSE 0 END AS dCn
-  FROM adm.HistorialEstado he
-  WHERE he.Estado=1 AND he.IdPersonal IS NOT NULL AND he.FechaCreacion >= ?
-) q
+FROM ({queries.sql_llamadas_delta(
+    "he.IdPersonal, he.IdOportunidad",
+    "he.IdPersonal IS NOT NULL AND he.FechaCreacion >= ?",
+)}) q
 INNER JOIN adm.Oportunidad o ON o.Id=q.IdOportunidad AND o.Estado=1
 INNER JOIN adm.Producto pr ON pr.Id=o.IdProducto AND pr.Estado=1
 GROUP BY q.IdPersonal, {AREA_CASE}
@@ -74,12 +69,6 @@ AREAS = ["Finanzas", "RRHH", "Otras"]
 
 
 def main():
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except (AttributeError, ValueError):
-            pass
-
     ap = argparse.ArgumentParser(description="Comparación de asesores por área (Finanzas/RRHH/Otras)")
     ap.add_argument("--desde", default="2026-01-01", help="Actividad con FechaCreacion >= (YYYY-MM-DD)")
     ap.add_argument("--min-leads", type=int, default=80,
