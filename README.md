@@ -14,7 +14,9 @@ olympus-crm-analytics/
 │   ├── db.py                 # capa de conexión provider-agnostic (singleton)
 │   ├── db_backends/          # backends por proveedor: mssql (actual), postgres (stub); TLS/certs viven aquí
 │   ├── calc.py               # Wilson LB, FTE attribution, sensibilidad
-│   ├── queries.py            # SQL templates parametrizados
+│   ├── cli.py                # argparse compartido: --top acotado, iso_date, --desde con alias
+│   ├── queries.py            # SQL templates parametrizados (índice de secciones en el docstring)
+│   ├── forecast_gp.py        # forecast con Gaussian Processes (módulo puro)
 │   └── format.py             # output table/csv/json
 ├── scripts/                  # ejecutables CLI
 │   ├── pipeline_kpis.py
@@ -26,11 +28,13 @@ olympus-crm-analytics/
 │   ├── calls_by_hour.py
 │   ├── funnel_transitions.py
 │   └── product_search.py
+├── docs/                     # historial (rollouts, decisiones)
 └── references/               # docs para Claude (no para ejecutar)
     ├── schema.md
     ├── queries.md
     ├── calculations.md
-    └── pitfalls.md
+    ├── pitfalls.md
+    └── postgres_migration.md # inventario T-SQL→Postgres para la migración
 ```
 
 ## Setup

@@ -2,6 +2,22 @@
 SQL query templates as Python strings. Centralized so all scripts share them.
 
 Each function returns a SQL string with `?` placeholders (pyodbc parameter style).
+
+Índice de secciones (en orden):
+  1. Config y helpers ....... SALES_DATA_START, effective_ingreso_expr,
+                              fecha_filter, sql_filtrar_asesor,
+                              matricula_evento, sql_llamadas_delta
+  2. Asesores ............... activos, leads, llamadas, matrículas, cobranza,
+                              velocity, calls-by-hour, transiciones
+  3. Países ................. leads y matrículas por país
+  4. TTFS / cohortes ........ sql_time_to_first_sale, sql_cohort_*
+  5. Productos .............. search, KPIs, funnel estado, FTE attribution,
+                              asesor×producto
+  6. Programas / ventanas ... SQL_PROGRAMAS_TOP_VENTAS (DECLARE @desde/@hasta)
+  7. Portafolio / NPS ....... encargado, LinkedIn, encuesta final
+
+Dialecto: T-SQL (SQL Server). Para SQL nuevo preferir ANSI (COALESCE, CAST) —
+ver references/postgres_migration.md antes de agregar T-SQLismos.
 """
 from __future__ import annotations
 
