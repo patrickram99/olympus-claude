@@ -1,8 +1,12 @@
 """
-DB connection helper for Olympus SQL Server.
+DB connection helper for Olympus (capa de abstracción de proveedor).
+
+El proveedor se elige con DB_DIALECT (default: mssql; postgres queda como stub
+para la migración). Todo lo específico del proveedor — driver, connection
+string, TLS/certificados, placeholders — vive en lib/db_backends/<dialecto>.py.
 
 Loads .env from the skill root and exposes:
-  - get_connection() -> pyodbc.Connection
+  - get_connection() -> DB-API connection
   - query(sql, params=None) -> list[dict]
   - query_scalar(sql, params=None) -> any
   - query_one(sql, params=None) -> dict | None
@@ -10,50 +14,27 @@ Loads .env from the skill root and exposes:
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Any, Iterable
 
-import pyodbc
 from dotenv import load_dotenv
+
+from .db_backends import get_backend
 
 # Load .env from the package root (parent of lib/)
 _ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_ROOT / ".env")
 
+_backend = get_backend(os.environ.get("DB_DIALECT", "mssql"))
 
-def _conn_str() -> str:
-    server = os.environ.get("DB_SERVER")
-    port = os.environ.get("DB_PORT", "1433")
-    db = os.environ.get("DB_NAME")
-    user = os.environ.get("DB_USER")
-    pwd = os.environ.get("DB_PASSWORD")
-    driver = os.environ.get("DB_DRIVER", "ODBC Driver 18 for SQL Server")
-    encrypt = os.environ.get("DB_ENCRYPT", "yes")
-    trust = os.environ.get("DB_TRUST_SERVER_CERT", "yes")
-    missing = [k for k, v in {"DB_SERVER": server, "DB_NAME": db, "DB_USER": user, "DB_PASSWORD": pwd}.items() if not v]
-    if missing:
-        print(f"ERROR: faltan variables en .env: {', '.join(missing)}", file=sys.stderr)
-        sys.exit(2)
-    return (
-        f"DRIVER={{{driver}}};"
-        f"SERVER={server},{port};"
-        f"DATABASE={db};"
-        f"UID={user};"
-        f"PWD={pwd};"
-        f"Encrypt={encrypt};"
-        f"TrustServerCertificate={trust};"
-    )
+_connection = None
 
 
-_connection: pyodbc.Connection | None = None
-
-
-def get_connection() -> pyodbc.Connection:
+def get_connection():
     """Lazy singleton connection. Reconnects on next call if broken."""
     global _connection
     if _connection is None:
-        _connection = pyodbc.connect(_conn_str(), timeout=30)
+        _connection = _backend.connect()
     return _connection
 
 
@@ -61,7 +42,7 @@ def query(sql: str, params: Iterable[Any] | None = None) -> list[dict]:
     """Run a SELECT and return all rows as a list of dicts."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(sql, params or [])
+    cur.execute(_backend.translate_sql(sql), params or [])
     cols = [c[0] for c in cur.description]
     rows = [dict(zip(cols, row)) for row in cur.fetchall()]
     cur.close()

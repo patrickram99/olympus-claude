@@ -11,7 +11,8 @@ olympus-crm-analytics/
 ├── .env.example              # template de credenciales
 ├── requirements.txt          # pyodbc, python-dotenv, tabulate
 ├── lib/
-│   ├── db.py                 # conexión SQL Server (singleton)
+│   ├── db.py                 # capa de conexión provider-agnostic (singleton)
+│   ├── db_backends/          # backends por proveedor: mssql (actual), postgres (stub); TLS/certs viven aquí
 │   ├── calc.py               # Wilson LB, FTE attribution, sensibilidad
 │   ├── queries.py            # SQL templates parametrizados
 │   └── format.py             # output table/csv/json
@@ -47,6 +48,12 @@ python scripts/pipeline_kpis.py --periodo 7
 ```
 
 Si la validación imprime KPIs en tabla, todo OK. Si hay error de conexión, revisa `.env` o instala "ODBC Driver 18 for SQL Server" desde Microsoft.
+
+## Seguridad y proveedor de BD
+
+- El proveedor se elige con `DB_DIALECT` en `.env` (hoy `mssql`; `postgres` quedará habilitado con la migración). Lo específico de cada proveedor — driver, connection string, TLS/certificados — vive en `lib/db_backends/`, así el cambio de proveedor o de certificado no toca scripts ni queries.
+- `.env` nunca se versiona ni se empaqueta (está en `.gitignore`).
+- **Pendiente (D1) para el despliegue como MCP server de empresa:** crear una credencial de servicio **read-only** dedicada en la BD y usarla en lugar de credenciales personales.
 
 ## Uso desde CLI
 
