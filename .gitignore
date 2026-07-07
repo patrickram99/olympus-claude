@@ -1,0 +1,14 @@
+# Credenciales — NUNCA versionar
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Salidas generadas
+*.xlsx
+out/
+
+# Local de Claude
+.claude/settings.local.json
