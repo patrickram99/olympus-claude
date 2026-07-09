@@ -2,11 +2,14 @@
 """
 P&L y análisis de sensibilidad para un producto.
 
+PROTOCOLO (igual que el forecast): el CPL y el pago docente son datos que DEBE
+dar el usuario para este curso — no se asumen defaults silenciosamente. Sin
+`--cpl` y `--docente` el script sale con exit 3 y el mensaje de qué preguntar.
+
 Uso:
-  python scripts/producto_pnl.py imbpepkeyacc05261                  # por código (preferido)
-  python scripts/producto_pnl.py 381                                # por Id interno
-  python scripts/producto_pnl.py imbpepkeyacc05261 --ingreso comprometido
-  python scripts/producto_pnl.py imbpepkeyacc05261 --salario 600 --cpl 0.25
+  python scripts/producto_pnl.py imbpepkeyacc05261 --cpl 0.25 --docente 1440
+  python scripts/producto_pnl.py 381 --cpl 0.25 --docente 1440      # por Id interno
+  python scripts/producto_pnl.py imbpepkeyacc05261 --cpl 0.25 --docente 1440 --ingreso comprometido
 """
 from __future__ import annotations
 
@@ -26,10 +29,10 @@ def main():
     ap.add_argument("producto", help="CodigoLanzamiento del curso (preferido) o Id interno")
     ap.add_argument("--ingreso", choices=["cobrado", "comprometido"], default="cobrado")
     ap.add_argument("--salario", type=float, help="Override salario base PEN")
-    ap.add_argument("--cpl", type=float, help="Override CPL USD")
+    ap.add_argument("--cpl", type=float, help="CPL en USD por lead (OBLIGATORIO: preguntar al usuario)")
     ap.add_argument("--comision-asesor", type=float, help="Override comisión asesor (0.10 = 10%%)")
     ap.add_argument("--comision-admin", type=float, help="Override comisión admin")
-    ap.add_argument("--docente", type=float, help="Override costo docente USD")
+    ap.add_argument("--docente", type=float, help="Pago docente en USD por curso (OBLIGATORIO: preguntar al usuario)")
     ap.add_argument("--usd-pen", type=float, help="Override tipo de cambio USD->PEN")
     ap.add_argument("--moneda", choices=["usd", "pen"], default="usd",
                     help="Moneda de las columnas de plata del P&L. 'usd' (DEFAULT): convierte "
@@ -38,6 +41,21 @@ def main():
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output", help="Archivo de salida")
     args = ap.parse_args()
+
+    # El CPL y el pago docente varían por curso y los conoce el usuario; correr
+    # con los defaults de config.toml da un P&L engañoso sin que se note.
+    faltan = []
+    if args.cpl is None:
+        faltan.append("CPL real del curso en USD por lead (--cpl)")
+    if args.docente is None:
+        faltan.append("pago docente del curso en USD (--docente)")
+    if faltan:
+        print("FALTAN DATOS DEL USUARIO para el P&L:", file=sys.stderr)
+        for f in faltan:
+            print(f"  - {f}", file=sys.stderr)
+        print("Pregúntale estos valores al usuario y reintenta pasándolos como flags.",
+              file=sys.stderr)
+        sys.exit(3)
 
     prod = cli.resolver_producto(args.producto)
     pid, codigo = prod["Id"], prod["Codigo"] or f"(sin código, id interno {prod['Id']})"

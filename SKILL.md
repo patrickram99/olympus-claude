@@ -27,7 +27,7 @@ Run any of these from the skill root. All accept `-h/--help`. Default output is 
 | `scripts/pipeline_kpis.py [--periodo 30] [--jornada 31|32]` | Snapshot global: asesores activos, llamadas, leads, matrículas, TC, tiempo a primer contacto. |
 | `scripts/asesores_top.py [--periodo 30] [--umbral 30] [--top 20] [--bottom]` | Ranking de asesores. **Mejores** (default): Wilson lower bound 95% desc. **Peores** (`--bottom`): **menos eficientes** por Wilson *upper* bound asc — sube a quien más leads quemó con poca/ninguna venta, no solo a los de 0 matrículas. Columnas extra: `LeadsxVenta` (leads por matrícula, `∞` si 0) y `WilsonUB%`. |
 | `scripts/asesor_detail.py <id> [--periodo 90]` | Detalle individual de un asesor (KPIs, cobranza, Wilson LB). |
-| `scripts/producto_pnl.py <codigo|id> [--moneda usd|pen] [--ingreso cobrado|comprometido] [--salario N] [--cpl N] [--comision-asesor N] [--comision-admin N] [--docente N] [--usd-pen N]` | P&L y análisis de sensibilidad de un producto. Soporta override de todos los parámetros vía flags. **Moneda por default USD** (`--moneda pen` para soles); los ratios (Margen %, Break-even TC) y el CPL máx no cambian con la moneda. |
+| `scripts/producto_pnl.py <codigo|id> --cpl <USD> --docente <USD> [--moneda usd|pen] [--ingreso cobrado|comprometido] [--salario N] [--comision-asesor N] [--comision-admin N] [--usd-pen N]` | P&L y análisis de sensibilidad de un producto. **`--cpl` y `--docente` son OBLIGATORIOS y los da el usuario — pregúntaselos SIEMPRE antes de correr** (exit 3 si faltan). **Moneda por default USD** (`--moneda pen` para soles); los ratios (Margen %, Break-even TC) y el CPL máx no cambian con la moneda. |
 | `scripts/paises_priority.py [--tema "mantenimiento|finanzas"] [--min-leads N]` | Ranking de países con Wilson LB para un set de productos. |
 | `scripts/time_to_first_sale.py [--desde YYYY-MM-DD] [--excluir-outliers 365]` | Días entre `FechaIngreso` y primera matriculación, CSV-ready. |
 | `scripts/calls_by_hour.py [--periodo 30]` | Distribución de llamadas por hora 0-23 con % contestadas y mejor franja detectada. |
@@ -57,7 +57,7 @@ Run any of these from the skill root. All accept `-h/--help`. Default output is 
 | "¿Quiénes son los 10 mejores asesores?" | `asesores_top.py --top 10 --periodo 90` |
 | "¿Quiénes son los peores?" / "¿Los menos eficientes?" / "¿Quién desperdicia más leads?" | `asesores_top.py --top 15 --bottom --periodo 90` (ordena por ineficiencia: alto volumen de leads con poca/ninguna venta, no solo 0 matrículas) |
 | "Dame el detalle del asesor 81" | `asesor_detail.py 81` |
-| "¿Cuánto cuesta procesar el producto imbpepkeyacc05261?" | `producto_pnl.py imbpepkeyacc05261` (acepta el código directo) |
+| "¿Cuánto cuesta procesar el producto imbpepkeyacc05261?" | Preguntar CPL y pago docente al usuario → `producto_pnl.py imbpepkeyacc05261 --cpl <USD> --docente <USD>` |
 | "¿Qué pasa si subimos el CPL a 0.30?" | `producto_pnl.py <codigo> --cpl 0.30` |
 | "¿En qué países priorizar para cursos de mantenimiento?" | `paises_priority.py --tema "mantenimiento"` |
 | "¿Cuánto tardan los asesores nuevos en cerrar su primera venta?" | `time_to_first_sale.py --desde 2026-01-01` |
@@ -120,6 +120,21 @@ Protocolo obligatorio antes de correr:
    si es por margen ≤ 0 (estructural) o porque ni el escenario optimista llega.
 5. La primera corrida en una máquina requiere `torch` + `gpytorch` instalados
    (ver Setup); la proyección asume flujo de leads "business as usual".
+
+## SIEMPRE: CPL y pago docente del P&L los da el usuario (`producto_pnl.py`)
+
+Antes de correr el P&L de un producto individual, **pregúntale SIEMPRE al usuario
+el CPL (USD por lead) y el pago docente (USD) de ESE curso** — varían por curso y
+correr con defaults da un P&L engañoso. NUNCA los inventes ni uses los de
+`config.toml` sin confirmarlos.
+
+1. Pregunta ambos valores ANTES de la primera corrida (ahorra un round-trip).
+2. Corre `producto_pnl.py <codigo> --cpl <USD> --docente <USD>`.
+3. Como red de seguridad, el script sale con **exit code 3** y la lista de
+   faltantes en stderr si no se pasan ambos flags.
+
+(`producto_compare.py` mantiene los defaults de `config.toml` para comparar
+muchos cursos con supuestos homogéneos; si el usuario da CPL/docente, pásalos.)
 
 ## SIEMPRE: declarar la base temporal del reporte de portafolio por encargado
 
