@@ -2,19 +2,18 @@
 """
 Comparar el P&L de varios productos en una sola tabla.
 
-Acepta una lista de IdProducto y muestra una fila por producto con los KPIs
-clave (Leads, Matric, FTE, CostoTotal, Ingreso, Margen, Margen%). Permite
-override de los mismos parámetros que `producto_pnl.py` — se aplican por
-igual a todos los productos comparados.
+Acepta una lista de cursos (CodigoLanzamiento preferido, o Id interno) y muestra
+una fila por producto con los KPIs clave (Leads, Matric, FTE, CostoTotal,
+Ingreso, Margen, Margen%). Permite override de los mismos parámetros que
+`producto_pnl.py` — se aplican por igual a todos los productos comparados.
 
 Comparte 100% de la lógica de cómputo con `producto_pnl.py` vía `lib.calc`,
 para que los números sean consistentes.
 
 Uso:
-  python scripts/producto_compare.py 381 382 388
+  python scripts/producto_compare.py imbpepkeyacc05261 imbcepgeshum07261
   python scripts/producto_compare.py 381 382 --ingreso comprometido
   python scripts/producto_compare.py 381 382 --cpl 0.30 --usd-pen 3.85
-  python scripts/producto_compare.py 381 382 -o compare.csv --fmt csv
 """
 from __future__ import annotations
 
@@ -24,14 +23,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.calc import CostParams, ProductBaseline, compute_pnl, fte_equivalents
 from lib.format import output
 
 
 def main():
     ap = argparse.ArgumentParser(description="Comparar P&L de varios productos")
-    ap.add_argument("producto_ids", nargs="+", type=int, help="IDs de productos (de adm.Producto)")
+    ap.add_argument("productos", nargs="+",
+                    help="Cursos a comparar: CodigoLanzamiento (preferido) o Id interno")
     ap.add_argument("--ingreso", choices=["cobrado", "comprometido"], default="cobrado")
     ap.add_argument("--salario", type=float, help="Override salario base PEN")
     ap.add_argument("--cpl", type=float, help="Override CPL USD")
@@ -66,11 +66,14 @@ def main():
     c_costo, c_ing, c_marg = f"Costo_{suf}", f"Ingreso_{suf}", f"Margen_{suf}"
 
     rows = []
-    missing: list[int] = []
-    for pid in args.producto_ids:
+    missing: list[str] = []
+    for valor in args.productos:
+        prod = cli.resolver_producto(valor)
+        pid = prod["Id"]
+        codigo = prod["Codigo"] or f"(id interno {pid})"
         kpis = db.query_one(queries.SQL_PRODUCT_KPIS, [pid, pid, pid, pid, pid, pid, pid])
         if not kpis or not kpis.get("TotalLeads"):
-            missing.append(pid)
+            missing.append(codigo)
             continue
 
         leads_prod = {r["IdPersonal"]: r["LeadsProducto"] for r in db.query(queries.SQL_LEADS_PRODUCTO_POR_ASESOR, [pid])}
@@ -87,7 +90,7 @@ def main():
         pnl = compute_pnl(baseline, params, ingreso_mode=args.ingreso)
 
         rows.append({
-            "Id": pid,
+            "Codigo": codigo,
             "Producto": (kpis["Nombre"] or "")[:50],
             "FTE": round(fte, 2),
             "Leads": baseline.leads,

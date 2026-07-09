@@ -3,10 +3,10 @@
 P&L y análisis de sensibilidad para un producto.
 
 Uso:
-  python scripts/producto_pnl.py 381                                # P&L con defaults
-  python scripts/producto_pnl.py 381 --ingreso comprometido         # asumiendo 100% cobranza
-  python scripts/producto_pnl.py 381 --salario 600 --cpl 0.25       # override de parámetros
-  python scripts/producto_pnl.py 381 --fmt json
+  python scripts/producto_pnl.py imbpepkeyacc05261                  # por código (preferido)
+  python scripts/producto_pnl.py 381                                # por Id interno
+  python scripts/producto_pnl.py imbpepkeyacc05261 --ingreso comprometido
+  python scripts/producto_pnl.py imbpepkeyacc05261 --salario 600 --cpl 0.25
 """
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.calc import CostParams, ProductBaseline, compute_pnl, fte_equivalents
 from lib.format import output
 
 
 def main():
     ap = argparse.ArgumentParser(description="P&L de un producto con análisis de sensibilidad")
-    ap.add_argument("producto_id", type=int, help="ID del producto (de adm.Producto)")
+    ap.add_argument("producto", help="CodigoLanzamiento del curso (preferido) o Id interno")
     ap.add_argument("--ingreso", choices=["cobrado", "comprometido"], default="cobrado")
     ap.add_argument("--salario", type=float, help="Override salario base PEN")
     ap.add_argument("--cpl", type=float, help="Override CPL USD")
@@ -39,12 +39,13 @@ def main():
     ap.add_argument("-o", "--output", help="Archivo de salida")
     args = ap.parse_args()
 
-    pid = args.producto_id
+    prod = cli.resolver_producto(args.producto)
+    pid, codigo = prod["Id"], prod["Codigo"] or f"(sin código, id interno {prod['Id']})"
 
     # KPIs base del producto
     kpis = db.query_one(queries.SQL_PRODUCT_KPIS, [pid, pid, pid, pid, pid, pid, pid])
     if not kpis or not kpis.get("TotalLeads"):
-        print(f"Producto {pid} no encontrado o sin leads.", file=sys.stderr)
+        print(f"Producto {codigo} no encontrado o sin leads.", file=sys.stderr)
         sys.exit(1)
 
     # FTE attribution
@@ -72,7 +73,7 @@ def main():
     pnl = compute_pnl(baseline, params, ingreso_mode=args.ingreso)
 
     header = (
-        f"\n>>> Producto {pid}: {kpis['Nombre']}\n"
+        f"\n>>> Curso {codigo} · {kpis['Nombre']}\n"
         f">>> Leads={baseline.leads:,} · Asesores={kpis['AsesoresInvolucrados']} (FTE={fte:.2f}) · "
         f"Matric={baseline.matriculados} · Comprometido=${baseline.monto_comprometido_usd:,.2f} · "
         f"Cobrado=${baseline.monto_cobrado_usd:,.2f}\n"

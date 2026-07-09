@@ -26,7 +26,16 @@ def main():
     args = ap.parse_args()
 
     like = f"%{args.pattern}%"
-    rows = db.query(queries.SQL_PRODUCT_SEARCH, [like, like])
+    raw = db.query(queries.SQL_PRODUCT_SEARCH, [like, like])
+    # El identificador de negocio es el CodigoLanzamiento; el Id interno no se
+    # muestra (fallback "id:N" solo para productos sin código asignado).
+    rows = [{
+        "Codigo": (r["CodigoLanzamiento"] or "").strip() or f"id:{r['Id']}",
+        "Nombre": r["Nombre"],
+        "CostoBase": r["CostoBase"],
+        "EstadoProductoTipoId": r["EstadoProductoTipoId"],
+        "FechaInicio": r["FechaInicio"],
+    } for r in raw]
     print(f"\n>>> {len(rows)} productos coinciden con '{args.pattern}'\n", file=sys.stderr)
     output(rows, fmt=args.fmt, out_path=args.output)
 

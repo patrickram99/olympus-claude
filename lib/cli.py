@@ -62,6 +62,35 @@ def factor_moneda(moneda: str, usd_pen: float) -> tuple[float, str]:
     return 1.0, "USD"
 
 
+def resolver_producto(valor: str | int) -> dict:
+    """
+    Resuelve un producto por Id numérico o CodigoLanzamiento y devuelve
+    {Id, Codigo, Nombre}. El código es el identificador que usa negocio
+    (los Ids internos NO se muestran en las salidas); acepta código parcial
+    si es inequívoco. Sale con exit 2 si no existe o es ambiguo.
+    """
+    import sys
+    from . import db, queries
+
+    valor = str(valor).strip()
+    pid = int(valor) if valor.isdigit() else None
+    row = db.query_one(queries.SQL_PRODUCTO_POR_ID_O_CODIGO, [pid, valor])
+    if row:
+        return row
+    if pid is None:
+        candidatos = db.query(queries.SQL_PRODUCTO_POR_CODIGO_LIKE, [f"%{valor}%"])
+        if len(candidatos) == 1:
+            return candidatos[0]
+        if len(candidatos) > 1:
+            lista = ", ".join(c["Codigo"] for c in candidatos[:8])
+            print(f"ERROR: código '{valor}' es ambiguo ({len(candidatos)} productos): {lista} …",
+                  file=sys.stderr)
+            sys.exit(2)
+    print(f"ERROR: producto '{valor}' no encontrado (ni como Id ni como CodigoLanzamiento).",
+          file=sys.stderr)
+    sys.exit(2)
+
+
 def top_type(value: str) -> int:
     """Entero 1..TOP_MAX para --top (evita pedidos desmedidos a la BD)."""
     try:

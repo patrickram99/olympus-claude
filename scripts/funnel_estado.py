@@ -9,9 +9,9 @@ pipeline de un curso (cuántos leads vivos en Calificado/Potencial/Promesa vs.
 ya matriculados o perdidos).
 
 Uso:
-  python scripts/funnel_estado.py                 # global (todos los productos)
-  python scripts/funnel_estado.py 400             # un producto
-  python scripts/funnel_estado.py 400 -o funnel.csv --fmt csv
+  python scripts/funnel_estado.py                       # global (todos los productos)
+  python scripts/funnel_estado.py imbpepkeyacc05261     # un curso por código (preferido)
+  python scripts/funnel_estado.py 400                   # un curso por Id interno
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib import db, queries
+from lib import cli, db, queries
 from lib.format import output
 
 # Orden de presentación del funnel: progresión activa, luego cierres.
@@ -40,13 +40,15 @@ GRUPO = {e: g for e, _, g in ESTADOS}
 
 def main():
     ap = argparse.ArgumentParser(description="Estado actual del funnel de un producto")
-    ap.add_argument("producto", type=int, nargs="?", default=None,
-                    help="IdProducto. Omitir para global.")
+    ap.add_argument("producto", nargs="?", default=None,
+                    help="CodigoLanzamiento del curso (preferido) o Id interno. Omitir para global.")
     ap.add_argument("--fmt", choices=["table", "csv", "json"], default="table")
     ap.add_argument("-o", "--output")
     args = ap.parse_args()
 
-    rows = db.query(queries.SQL_FUNNEL_ESTADO_ACTUAL, [args.producto, args.producto])
+    prod = cli.resolver_producto(args.producto) if args.producto is not None else None
+    pid = prod["Id"] if prod else None
+    rows = db.query(queries.SQL_FUNNEL_ESTADO_ACTUAL, [pid, pid])
     counts = {int(r["IdEstado"]): int(r["N"]) for r in rows}
     total = sum(counts.values())
 
@@ -73,7 +75,7 @@ def main():
     ganados = counts.get(3, 0)
     cerrados_neg = sum(counts.get(e, 0) for e in (7, 2))
 
-    scope = f"producto {args.producto}" if args.producto else "GLOBAL"
+    scope = (f"curso {prod['Codigo'] or '(sin código)'} · {prod['Nombre']}" if prod else "GLOBAL")
     print(f"\n>>> ESTADO ACTUAL DEL FUNNEL · {scope}", file=sys.stderr)
     print(f">>> Total oportunidades: {total:,}  ·  Activas (1/4/5/6): {activos:,}"
           f"  ·  Matriculadas: {ganados:,}  ·  Perdidas/Descartadas: {cerrados_neg:,}",

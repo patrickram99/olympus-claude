@@ -298,6 +298,22 @@ WHERE p.Estado = 1
   AND DATEDIFF(day, {ingreso}, v.PrimeraVenta) >= 0
 """
 
+# Resolución de un producto por Id numérico o CodigoLanzamiento (exacto).
+# Params: Id (int o NULL), CodigoLanzamiento (str).
+SQL_PRODUCTO_POR_ID_O_CODIGO = """
+SELECT pr.Id, ISNULL(pr.CodigoLanzamiento, '') AS Codigo, LTRIM(RTRIM(pr.Nombre)) AS Nombre
+FROM adm.Producto pr
+WHERE pr.Estado = 1 AND (pr.Id = ? OR pr.CodigoLanzamiento = ?)
+"""
+
+# Fallback del resolvedor: código parcial (LIKE). Param: %patron%.
+SQL_PRODUCTO_POR_CODIGO_LIKE = """
+SELECT pr.Id, ISNULL(pr.CodigoLanzamiento, '') AS Codigo, LTRIM(RTRIM(pr.Nombre)) AS Nombre
+FROM adm.Producto pr
+WHERE pr.Estado = 1 AND pr.CodigoLanzamiento LIKE ?
+ORDER BY pr.Id DESC
+"""
+
 # Búsqueda de productos
 SQL_PRODUCT_SEARCH = """
 SELECT pr.Id, pr.Nombre, pr.CodigoLanzamiento, pr.CostoBase, pr.EstadoProductoTipoId,
@@ -378,14 +394,14 @@ GROUP BY he.IdPersonal
 
 # Leads por (asesor, producto) — filtrado a un asesor en el período. Params: IdPersonal, days.
 SQL_LEADS_ASESOR_X_PRODUCTO = """
-SELECT op.IdProducto, pr.Nombre AS Producto,
+SELECT op.IdProducto, ISNULL(pr.CodigoLanzamiento, '') AS Codigo, pr.Nombre AS Producto,
   COUNT(DISTINCT he.IdOportunidad) AS Leads
 FROM adm.HistorialEstado he
 INNER JOIN adm.Oportunidad op ON op.Id = he.IdOportunidad AND op.Estado = 1
 INNER JOIN adm.Producto pr    ON pr.Id = op.IdProducto AND pr.Estado = 1
 WHERE he.Estado = 1 AND he.IdPersonal = ?
   AND he.FechaCreacion >= DATEADD(day, -?, CAST(GETDATE() AS date))
-GROUP BY op.IdProducto, pr.Nombre
+GROUP BY op.IdProducto, pr.CodigoLanzamiento, pr.Nombre
 """
 
 # Matrículas por (asesor, producto). Params: IdPersonal, days.

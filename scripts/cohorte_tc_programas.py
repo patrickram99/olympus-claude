@@ -116,6 +116,7 @@ def main():
             return round(a[1] / a[0] * 100, 2) if a[0] else 0.0
         prim, ult = ev[orden[0]], ev[orden[-1]]
         comp_rows.append({
+            "Codigo": fam,
             "Programa": fam_name.get(fam, fam)[:40],
             "Cohortes (TC a %dd)" % args.mat_days: " → ".join(
                 f"{MESES[m]}:{tc(ev[(y, m)]):.2f}%" for (y, m) in orden),
@@ -165,7 +166,7 @@ def main():
     ]
     print("\n".join(hdr), file=sys.stderr)
 
-    cols = ["Programa", "Cohortes (TC a %dd)" % args.mat_days, "Leads_ult", "TC_prim", "TC_ult", "ΔTCpp"]
+    cols = ["Codigo", "Programa", "Cohortes (TC a %dd)" % args.mat_days, "Leads_ult", "TC_prim", "TC_ult", "ΔTCpp"]
     output(comp_rows, fmt=args.fmt, out_path=args.output, headers=cols)
 
 

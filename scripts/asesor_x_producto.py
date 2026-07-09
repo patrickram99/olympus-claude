@@ -70,7 +70,7 @@ def main():
         tc = (matric / leads) if leads else 0.0
         w = wilson_lb(matric, leads)
         rows.append({
-            "IdProducto": pid,
+            "Codigo": (r["Codigo"] or "").strip() or f"id:{pid}",
             "Producto": r["Producto"],
             "Leads": leads,
             "Matric": matric,

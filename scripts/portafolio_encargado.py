@@ -137,8 +137,9 @@ def main():
         # denominador son la MISMA cohorte (conversión real); con --base evento el numerador
         # (matrículas por fecha de evento) puede venir de leads creados antes → proxy.
         r["TC"] = round(100.0 * r["MatricVentana"] / r["LeadsVentana"], 2) if r["LeadsVentana"] else 0.0
-        # % del ingreso cobrado del encargado sobre el total del portafolio.
-        r["%Cobrado"] = round(100.0 * r["IngCobrado"] / total_cobrado, 2)
+        # % del total: participación del cobrado de este encargado sobre el cobrado
+        # de todos los portafolios del reporte (suma 100). NO es cobrado/comprometido.
+        r["%Total"] = round(100.0 * r["IngCobrado"] / total_cobrado, 2)
         for k in ("IngCobrado", "IngCompVentana"):
             r[k] = round(r[k], 2)
 
@@ -149,7 +150,7 @@ def main():
                   "MatricVentana", "IngCobrado", "IngCompVentana"):
             total[k] = round(sum(r[k] for r in rows), 2)
         total["TC"] = round(100.0 * total["MatricVentana"] / total["LeadsVentana"], 2) if total["LeadsVentana"] else 0.0
-        total["%Cobrado"] = 100.0
+        total["%Total"] = 100.0
         rows.append(total)
 
     cartera = ("histórico completo del portafolio"
@@ -181,7 +182,7 @@ def main():
     output(rows, fmt=args.fmt, out_path=args.output,
            headers=["Encargado", "ProdConVenta", "ProdSinVenta", "Productos",
                     "LeadsVentana", "MatricVentana", "TC",
-                    "IngCobrado", "%Cobrado", "IngCompVentana"])
+                    "IngCobrado", "%Total", "IngCompVentana"])
 
 
 if __name__ == "__main__":

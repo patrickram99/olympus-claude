@@ -53,8 +53,9 @@ def _fold(s: str) -> str:
 # (todo menos Registrado, que aún no se ha llamado).
 XLSX_COLS = ["Codigo", "Curso", "Leads", "Reg", "Cal", "Pot", "Prom",
              "Ins", "TC", "TCProc", "Perdidos", "Comprometido", "Cobrado", "%Cob"]
-# Columnas de la vista rica (tabla/csv): agrega Id y Desarrollador.
-FULL_COLS = ["Id", "Codigo", "Curso", "Desarrollador", "Leads", "Reg", "Cal",
+# Columnas de la vista rica (tabla/csv): agrega Desarrollador. El Id interno
+# no se muestra — el identificador de negocio es el Codigo.
+FULL_COLS = ["Codigo", "Curso", "Desarrollador", "Leads", "Reg", "Cal",
              "Pot", "Prom", "Ins", "TC", "TCProc", "Perdidos", "Comprometido", "Cobrado", "%Cob"]
 
 SQL_PRODUCTOS = """
@@ -136,8 +137,7 @@ def build_rows(factor: float, excluir: str | None, desarrollador: str | None):
         procesados = total - reg  # leads ya llamados (todo menos Registrado)
         compr, cobr = rmap.get(pid, (0.0, 0.0))
         rows.append({
-            "Id": pid,
-            "Codigo": codigo,
+            "Codigo": codigo or f"id:{pid}",
             "Curso": curso,
             "Desarrollador": dev or "(sin encargado)",
             "Leads": total,

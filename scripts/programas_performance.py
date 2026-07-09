@@ -75,8 +75,9 @@ def main():
                     help="Mínimo de leads en ventana para el score; corta denominadores minúsculos "
                          "(productos duplicados/pre-vendidos) que inflan TC y eficiencia (default 200)")
     ap.add_argument("--top", type=cli.top_type, default=20, help="Cuántos programas mostrar")
-    ap.add_argument("--ids", help="Lista de IdProducto separados por coma para restringir a esos programas "
-                                  "(p. ej. comparar su historia completa con --desde 2026-01-01)")
+    ap.add_argument("--ids", "--cursos", dest="ids",
+                    help="Lista separada por coma de cursos a restringir: CodigoLanzamiento "
+                         "(preferido) o Id interno (p. ej. comparar su historia completa con --desde 2026-01-01)")
     ap.add_argument("--orden", choices=["cobrado", "score", "eficiencia", "tc", "ventas"], default="score",
                     help="Criterio de orden de la tabla (default score)")
     ap.add_argument("--usd-pen", type=float, help="Override USD->PEN (solo aplica con --moneda pen)")
@@ -98,11 +99,8 @@ def main():
 
     ids = None
     if args.ids:
-        try:
-            ids = {int(x) for x in args.ids.split(",") if x.strip()}
-        except ValueError:
-            print(f"ERROR: --ids debe ser una lista de enteros separados por coma, recibido: {args.ids!r}", file=sys.stderr)
-            sys.exit(2)
+        # Acepta Id numérico o CodigoLanzamiento; se resuelve todo a Id interno.
+        ids = {cli.resolver_producto(x.strip())["Id"] for x in args.ids.split(",") if x.strip()}
 
     ventas_rows = db.query(queries.SQL_PROGRAMAS_TOP_VENTAS, [desde, hasta])
     if ids is not None:
@@ -196,7 +194,7 @@ def main():
     ]
     print("\n".join(h for h in hdr if h is not None), file=sys.stderr)
 
-    cols = ["Id", "Codigo", "Programa", "Leads", "Ventas", "TC%", "Llamadas", "Cont%",
+    cols = ["Codigo", "Programa", "Leads", "Ventas", "TC%", "Llamadas", "Cont%",
             "Llam/Vta", c_cobr, "%Cobr", "Cobr/Llam", "Ticket", "PerfScore"]
     output(top, fmt=args.fmt, out_path=args.output, headers=cols)
 

@@ -125,7 +125,7 @@ def main():
         ]
     print("\n".join(hdr) + "\n", file=sys.stderr)
 
-    cols = ["Id", "Codigo", "Programa", "Leads", "Ventas", "Conv", "TC%", c_comp, c_cobr, "%Cobr"]
+    cols = ["Codigo", "Programa", "Leads", "Ventas", "Conv", "TC%", c_comp, c_cobr, "%Cobr"]
     output(top, fmt=args.fmt, out_path=args.output, headers=cols)
 
 
