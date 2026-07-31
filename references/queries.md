@@ -22,6 +22,8 @@ Convention: replace `{periodo}` with the number of days (e.g., `30`) or use `'20
 14. Mejor hora del día para llamar
 15. Costos de procesamiento por producto (FTE atribuidos)
 16. Detalle de un producto específico
+17. Conversión (TC) por origen del lead
+18. Campañas de LinkedIn por `FormName` (naming pattern)
 
 ---
 

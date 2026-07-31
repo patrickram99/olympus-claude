@@ -1,0 +1,68 @@
+{
+  "skill_name": "olympus-crm-analytics",
+  "evals": [
+    {
+      "id": 0,
+      "name": "curso-report-alltime",
+      "prompt": "Dame el reporte del curso imbpepkeyacc08261",
+      "expected_output": "Corre curso_report.py (all-time, sin ventana de N días); el reporte incluye ficha, captación, foto del funnel e ingresos; identifica el curso por CodigoLanzamiento y nunca muestra el Id interno.",
+      "assertions": [
+        "Ejecutó scripts/curso_report.py (no armó el reporte con SQL ad-hoc ni con otros scripts sueltos)",
+        "El reporte es all-time: no aplicó ninguna ventana de 'últimos N días' al curso",
+        "La respuesta incluye la foto del funnel (etapas Registrado/Calificado/Potencial/Promesa/Matriculado con conteos)",
+        "El curso se identifica por su CodigoLanzamiento y el Id interno de adm.Producto no aparece en la respuesta"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "pnl-pregunta-cpl-docente",
+      "prompt": "¿Qué rentabilidad tiene el curso imbpepkeyacc08261?",
+      "expected_output": "NO corre producto_pnl.py con valores inventados: pregunta al usuario el CPL (USD por lead) y el pago docente (USD) de ese curso antes de calcular.",
+      "assertions": [
+        "NO ejecutó producto_pnl.py con valores de --cpl o --docente inventados o tomados de defaults sin confirmar",
+        "La respuesta final pregunta al usuario el CPL en USD por lead del curso",
+        "La respuesta final pregunta al usuario el pago docente en USD del curso",
+        "No presenta un margen/P&L numérico calculado a mano como si fuera definitivo"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "peores-asesores-wilson-ub",
+      "prompt": "¿Quiénes son los asesores menos eficientes de los últimos 90 días?",
+      "expected_output": "Corre asesores_top.py --bottom --periodo 90; el ranking usa Wilson upper bound (no solo 0 matrículas) y muestra el tamaño de muestra (leads).",
+      "assertions": [
+        "Ejecutó scripts/asesores_top.py con el flag --bottom",
+        "La respuesta explica el criterio de ineficiencia (Wilson upper bound / leads quemados con poca venta), no solo lista gente con 0 matrículas",
+        "El ranking muestra el número de leads (sample size) de cada asesor junto a su TC"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "pagos-docentes-mes",
+      "prompt": "Dame los pagos a docentes de julio",
+      "expected_output": "Corre pagos_docentes.py --mes 2026-07; la salida tiene nombre completo del docente, cursos padre por CodigoLanzamiento, horas, fechas y la columna Monto (USD) vacía para completar.",
+      "assertions": [
+        "Ejecutó scripts/pagos_docentes.py con --mes 2026-07 (o el default equivalente al mes corriente)",
+        "La salida incluye el nombre completo de cada docente y los cursos padre identificados por CodigoLanzamiento",
+        "La columna Monto (USD) aparece vacía / a completar por el usuario — no inventó montos de pago"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "portafolio-encargado-base",
+      "prompt": "¿Cuánto cobró cada encargado de cursos y qué peso tiene cada portafolio?",
+      "expected_output": "Corre portafolio_encargado.py (default base cohorte); la respuesta incluye la columna %Total y menciona que existe la alternativa --base evento (caja por fecha de pago) explicando qué mide cada base.",
+      "assertions": [
+        "Ejecutó scripts/portafolio_encargado.py",
+        "La respuesta incluye la columna %Total (peso del cobrado de cada encargado sobre el total)",
+        "La respuesta menciona la base temporal usada (cohorte por creación) y que existe la alternativa --base evento, explicando la diferencia",
+        "No presenta el reporte como rentabilidad/margen — deja claro que son ingresos"
+      ],
+      "files": []
+    }
+  ]
+}

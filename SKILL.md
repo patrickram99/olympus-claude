@@ -1,11 +1,14 @@
 ---
 name: olympus-crm-analytics
 description: Analytical queries on the Olympus CRM (IMB / IESL Institute). Use whenever the user asks about asesores, leads, oportunidades, matriculaciones, productos, países, cobranza, comisiones, costos, conversión, TC, time-to-first-sale, ramp-up, sensibilidad, ROI, people analytics, or references tables adm.Oportunidad, adm.HistorialEstado, adm.Personal, adm.Producto, adm.CobranzaPlan, adm.Persona, adm.PotencialCliente, mdm.Pais. Trigger on Olympus, IMB, IESL, asesores, leads, "dónde priorizar", "cuánto cuesta", "quién convierte más", course codes like imbpepkeyacc05261. PREFER bundled scripts (scripts/*.py) over running raw SQL — they are tested, parameterized, and pre-validate the gotchas. Use mcp__mssql__execute_sql only for ad-hoc questions not covered by an existing script.
+compatibility: Requires LOCAL execution (Claude Code / local agent mode) — scripts connect via pyodbc + "ODBC Driver 18 for SQL Server" to a private SQL Server using credentials from a local .env. Does NOT work in a cloud sandbox (no network route to the DB, no ODBC driver).
 ---
 
 # Olympus CRM Analytics
 
 Skill for analyzing the Olympus CRM (IMB Institute / IESL Institute sub-brand) on SQL Server. Bundles **executable Python scripts** for the most common operations plus reference docs for ad-hoc queries.
+
+**Ejecución local únicamente**: los scripts conectan a un SQL Server privado con credenciales del `.env` local y el driver ODBC 18. En un sandbox cloud (p. ej. el panel de Skills de Claude Desktop) no hay ruta a la BD ni driver — no intentes correrlos ahí.
 
 ## Decision tree: scripts vs MCP
 
@@ -20,36 +23,68 @@ Whenever you fall back to MCP, **read `references/pitfalls.md` first** — there
 
 ## Available scripts
 
-Run any of these from the skill root. All accept `-h/--help`. Default output is a pretty table; pass `--fmt csv -o file.csv` to save.
+Run any of these from the skill root. All accept `-h/--help`. Default output is a pretty table; pass `--fmt csv -o file.csv` to save. **Detalle completo de flags, columnas y caveats por script: `references/scripts.md`** — léelo antes de interpretar columnas que no conozcas.
 
-| Script | What it answers |
+### Pipeline y asesores
+
+| Script | Qué responde |
 |---|---|
-| `scripts/pipeline_kpis.py [--periodo 30] [--jornada 31|32]` | Snapshot global: asesores activos, llamadas, leads, matrículas, TC, tiempo a primer contacto. |
-| `scripts/asesores_top.py [--periodo 30] [--umbral 30] [--top 20] [--bottom]` | Ranking de asesores. **Mejores** (default): Wilson lower bound 95% desc. **Peores** (`--bottom`): **menos eficientes** por Wilson *upper* bound asc — sube a quien más leads quemó con poca/ninguna venta, no solo a los de 0 matrículas. Columnas extra: `LeadsxVenta` (leads por matrícula, `∞` si 0) y `WilsonUB%`. |
-| `scripts/asesor_detail.py <id> [--periodo 90]` | Detalle individual de un asesor (KPIs, cobranza, Wilson LB). |
-| `scripts/producto_pnl.py <codigo|id> --cpl <USD> --docente <USD> [--moneda usd|pen] [--ingreso cobrado|comprometido] [--salario N] [--comision-asesor N] [--comision-admin N] [--usd-pen N]` | P&L y análisis de sensibilidad de un producto. **`--cpl` y `--docente` son OBLIGATORIOS y los da el usuario — pregúntaselos SIEMPRE antes de correr** (exit 3 si faltan). **Moneda por default USD** (`--moneda pen` para soles); los ratios (Margen %, Break-even TC) y el CPL máx no cambian con la moneda. |
-| `scripts/paises_priority.py [--tema "mantenimiento|finanzas"] [--min-leads N]` | Ranking de países con Wilson LB para un set de productos. |
-| `scripts/time_to_first_sale.py [--desde YYYY-MM-DD] [--excluir-outliers 365]` | Días entre `FechaIngreso` y primera matriculación, CSV-ready. |
-| `scripts/calls_by_hour.py [--periodo 30]` | Distribución de llamadas por hora 0-23 con % contestadas y mejor franja detectada. |
-| `scripts/funnel_transitions.py [--asesor ID] [--periodo 90]` | Matriz de conversión por etapa (Reg→Cal+, Cal→Pot+, Pot→Prom+, Prom→Mat). FLUJO entre etapas en una ventana. |
-| `scripts/funnel_estado.py [codigo\|id]` | Estado ACTUAL del funnel: foto del stock de oportunidades por etapa vigente (Registrado/Calificado/Potencial/Promesa/Matriculado/Perdido/No calificado), con activas vs. cerradas y TC actual. Sin curso = global. |
-| `scripts/curso_report.py <codigo\|id> [--moneda usd\|pen] [--usd-pen N]` | **Reporte completo de UN curso** en una sola corrida, **SIEMPRE all-time** (todas las oportunidades asignadas al curso — nunca ventanas de "últimos N días"): ficha (nombre, desarrollador, estado de catálogo, precio base, fecha de inicio — inferida del sufijo MMYYN si la BD no la tiene), captación (primer/último lead, leads totales), foto actual del funnel (stock por etapa + activos + TC/TCProc), esfuerzo (asesores involucrados, llamadas contestadas/no contestadas acumuladas) e ingresos (comprometido/cobrado/%Cob, cohorte all-time, USD default). Es el script para "dame el reporte del curso X". NO calcula P&L (eso es `producto_pnl.py`, que pide CPL y docente). |
-| `scripts/product_search.py "patrón"` | Buscar cursos por nombre o código de lanzamiento (devuelve el `Codigo`, nunca el Id interno). Útil cuando el usuario da un nombre aproximado. |
-| `scripts/cursos_en_venta.py [--desarrollador ID\|texto] [--excluir REGEX] [--usd-pen N] [--fmt table\|csv\|json\|xlsx] [-o ruta]` | **Cartera de cursos en estado "En venta"** (`Producto.EstadoProductoTipoId=20`) — los que HOY se comercializan, no cualquiera que haya vendido. Una fila por curso con: foto del funnel actual (Reg/Cal/Pot/Prom = stock vigente por etapa), `Ins` (inscritos = matriculados vigentes), `TC` (Ins/Leads %), `TCProc` (Ins sobre leads YA procesados = Ins/(Leads−Reg) %, excluye Registrado que aún no se llama), `Perdidos` (Perdido 7 + No calificado 2), `Comprometido`/`Cobrado`/`%Cob` en USD por defecto (`--moneda pen` convierte; cohorte all-time del curso). `--desarrollador` filtra por encargado (`PersonalCreacion`): Id numérico o substring del nombre. `--excluir` es un regex case-insensitive sobre código+nombre para descartar paraguas de captación — **default `mundialer`** (excluye las campañas "Mundialero"); pasa `--excluir ""` para no excluir nada. `--fmt xlsx -o ruta.xlsx` escribe un Excel con encabezado formateado, panel congelado y autofiltro (columnas: Codigo, Curso, Leads, Reg, Cal, Pot, Prom, Ins, TC, TCProc, Perdidos, Comprometido, Cobrado, %Cob). Ordena por Ins desc. |
-| `scripts/programas_top_ventas.py [--desde YYYY-MM-DD] [--hasta YYYY-MM-DD] [--top 25] [--usd-pen N] [--max-usd-por-venta N]` | Ranking de programas por ventas en una ventana, con leads, TC de cohorte (conv/leads del período), ingreso comprometido y cobrado (USD por defecto; `--moneda pen` convierte), %% cobrado y código del curso. Incluye análisis agregado de %% cobrado y un guard que marca/excluye montos comprometidos corruptos. |
-| `scripts/asesor_x_producto.py <id> [--periodo 90] [--min-leads 5]` | Productos en los que un asesor vende mejor. Lista Codigo del curso, leads, matrículas, TC y Wilson LB ordenado por Wilson LB desc. |
-| `scripts/cohort_ramp.py --desde YYYY-MM-DD [--meses 6]` | Ramp-up de asesores nuevos: leads y matrículas por mes desde su `FechaIngreso`, columnas `M1_Leads, M1_Matric, …`. |
-| `scripts/producto_compare.py <codigo|id> <codigo|id> [...] [--moneda usd|pen] [--ingreso ...] [--cpl N] [...]` | P&L de varios productos en una sola tabla (mismas overrides que `producto_pnl.py`). **Moneda por default USD** (`--moneda pen` para soles); Margen% y TC% no cambian. |
-| `scripts/portafolio_encargado.py [--base creacion\|evento] [--desde 2026-01-01] [--comp-desde 2026-04-01] [--comp-hasta 2026-06-01] [--min-leads 20] [--historico]` | **Ingresos y estado actual del portafolio** por **persona de desarrollo / encargado del curso** (`Producto.PersonalCreacion`). **NO calcula rentabilidad/margen** — solo leads, matrículas, TC e ingresos (cobrado + comprometido, USD por defecto; `--moneda pen` convierte). La rentabilidad se analiza por producto con `producto_pnl.py` / `producto_compare.py`. **Por default el portafolio = productos con `>=--min-leads` (20) leads CREADOS en la ventana** `[--comp-desde, --comp-hasta)` — el umbral corta cohortes viejas que solo captaron 1–7 leads de goteo (no es cartera real del período). Columnas `ProdConVenta` / `ProdSinVenta` / `Productos` (total) / `LeadsVentana` (leads creados en el período) / `MatricVentana` (matriculados de la ventana) / `TC` (con `--base creacion` = conversión real de cohorte; con `--base evento` = proxy) / `IngCobrado` / `%Total` (participación del cobrado del encargado sobre el cobrado total del reporte, suma 100 — NO confundir con `%Cob` de `cursos_en_venta.py`, que es cobrado/comprometido) / `IngCompVentana`. **Al presentar el reporte incluye siempre la columna `%Total`** — el usuario la usa para ver el peso de cada portafolio. Pasa `--historico` para el portafolio histórico completo, o `--min-leads 1` para incluir todo lo que captó algún lead. Excluye encargado NULL e ids huérfanos. |
-| `scripts/cohorte_tc_programas.py [--desde YYYY-MM-DD] [--mat-days 30] [--min-leads 100] [--hoy YYYY-MM-DD]` | Compara la TC de cohorte de un mismo programa **mes a mes de captación, a madurez equivalente** (convertidos dentro de N días de la creación del lead). Agrupa productos por familia (código sin sufijo MMYYN), marca meses inmaduros (que aún no cumplen la ventana), y rankea familias por crecimiento de TC. Para "¿en qué programas mejoró/empeoró la conversión?". |
-| `scripts/programas_performance.py [--periodo 60] [--min-ventas 5] [--min-leads 200] [--top 20] [--orden score\|cobrado\|eficiencia\|tc\|ventas] [--ids 1,2,3] [--desde/--hasta]` | Performance de programas en una ventana (NO cohorte): combina TC de ventana, **llamadas = esfuerzo de asesor** (delta de contadores), Llam/Venta, dinero cobrado/comprometido en PEN, Cobr/Llam (retorno al esfuerzo) y un PerfScore 0-100 (TC + dinero + eficiencia normalizados). `--ids` restringe a programas puntuales (combinar con `--desde 2026-01-01` para historia completa). Guard `--min-leads` corta denominadores minúsculos que inflan TC. |
-| `scripts/asesores_por_area.py [--desde 2026-01-01] [--min-leads 80]` | Compara asesores por **área temática** (Finanzas/RRHH/Otras, inferida del nombre del producto). Vista 1 nivel área (TC, llamadas/lead, llamadas/venta → ¿el área es fácil o dura?); Vista 2 nivel asesor clasificado por área hogar (matrículas/asesor, TC, esfuerzo, Wilson → ¿producen mediocre?). Para testear hipótesis tipo "área consolidada = asesores sin motivación". |
-| `scripts/conversion_por_origen.py [--desde YYYY-MM-DD] [--hasta YYYY-MM-DD] [--incluir-eliminados]` | Compara la **TC global de cada origen del lead** (Linkedin/Manual/Wordpress/FormularioWeb/NULL) con leads, matrículas, TC%, **Wilson LB 95%** (muestras muy dispares) y % del total de matrículas. Convertido = alcanzó estado Matriculado. Incluye fila TOTAL. Para "¿qué canal convierte mejor?". OJO: las TC no son comparables a igualdad de intención (ver caveat abajo). |
-| `scripts/linkedin_campanas.py [--buscar texto] [--por-formato] [--min-leads N] [--top N] [--sin-test]` | Lista las **campañas de LinkedIn** (`adm.LinkedIn_Lead.FormName`) con el **naming pattern decodificado** en columnas (EsForm `FOR-` / Formato `PAE\|CEP\|PEP\|PAD` / Resto = tema+nivel+segmento), leads y rango de fechas. `--buscar` filtra `FormName LIKE %texto%`; `--por-formato` agrega por prefijo de formato. Para "¿cómo se llaman las campañas?", "¿hay una campaña con X en el nombre?", "¿qué patrón siguen?". |
-| `scripts/nps_encuesta_final.py [--nivel desarrollador\|modulo\|detalle] [--timeline dia\|semana\|mes] [--desde YYYY-MM-DD] [--hasta YYYY-MM-DD] [--min-resp 5] [--ocultar-chicas]` | **NPS (Net Promoter Score) de la ENCUESTA FINAL** (`adm.EncuestaFinalRespuestas.RecomendacionEscala` 0-10) atribuido al **desarrollador del curso** (`Producto.PersonalCreacion`). Promotores 9-10 / Pasivos 7-8 / Detractores 0-6; NPS = %Prom − %Det. `--nivel desarrollador` (default) = 1 fila por dev; `--nivel modulo` = 1 fila por módulo; `--nivel detalle` = módulos agrupados bajo cada dev. **`--timeline [dia\|semana\|mes]`** (default semana) = evolución del NPS en el tiempo de TODAS las respuestas agregadas (ignora `--nivel`; combinar con `--desde/--hasta`). Marca con `*` muestras < `--min-resp`. Maneja el many-to-many módulo↔producto deduplicando módulo→desarrollador (atribución única a nivel dev). Fila TOTAL. |
-| `scripts/forecast_programa.py --codigo <CodigoLanzamiento\|Id> --cpl <PEN> --docente <PEN> [--fecha-inicio YYYY-MM-DD] [--optimism 0.95] [--lookback N] [--min-valid-leads 100] [--usd-pen 3.78]` | **Forecast GP + break-even de UN programa** (Gaussian Processes con GPyTorch). Proyecta leads de la próxima semana (media, CI95, cuantiles optimista P80/P90/P95 y pesimista) y ventas acumuladas a la fecha de inicio (escenarios p05/media/p95), calcula N break-even y decide **CONTINUAR / RIESGO / CANCELAR** + leads/semana a solicitar. Ver protocolo obligatorio abajo. |
-| `scripts/pagos_docentes.py [--mes YYYY-MM] [--desarrollador ID\|texto] [--async-horas 2] [--fmt table\|csv\|json\|fichas] [-o ruta]` | **Pagos a docentes del mes**: módulos cuya **última sesión de clase** (`adm.SesionHorario`, excluye la sesión de presentación) cae en `--mes` (default: mes actual), con **docente nombre completo** (`Modulo.IdDocente → Docente → Persona`), **cursos padre** (`EstructuraCurricularModulo → EstructuraCurricular → Producto.CodigoLanzamiento`), **Horas = en vivo reales + 2h asincrónicas** (`--async-horas`), fechas de dictado (primera y última sesión) y **columna Monto (USD) VACÍA** que completa el usuario. `--desarrollador` filtra por encargado del curso padre (`Producto.PersonalCreacion`, Id o substring del nombre) y muestra solo los cursos de ese dev. `--fmt fichas` imprime el formato de ficha por docente (`NOMBRES Y APELLIDOS DEL DOCENTE: … / - Código de curso: … / - Monto (USD):`) que usa administración. Horas con `*` = sesiones registradas con duración cero en Olympus (estimadas a 2h/sesión — corregir el registro). |
-| `scripts/smoke_test.py` | Carga los módulos y valida el worked example sin tocar la DB — útil antes de configurar `.env`. |
+| `pipeline_kpis.py [--periodo 30]` | Snapshot global: asesores activos, llamadas, leads, matrículas, TC, tiempo a primer contacto. |
+| `asesores_top.py [--top 20] [--bottom]` | Ranking de asesores. Mejores por Wilson LB; peores/menos eficientes con `--bottom` (Wilson UB asc). |
+| `asesor_detail.py <id> [--periodo 90]` | Detalle individual de un asesor (KPIs, cobranza, Wilson LB). |
+| `asesor_x_producto.py <id>` | Productos en los que un asesor vende mejor (Wilson LB desc). |
+| `cohort_ramp.py --desde YYYY-MM-DD` | Ramp-up de asesores nuevos: leads y matrículas por mes desde su ingreso. |
+| `time_to_first_sale.py [--desde YYYY-MM-DD]` | Días entre `FechaIngreso` y primera matriculación. |
+| `asesores_por_area.py` | Compara asesores por área temática (Finanzas/RRHH/Otras): ¿el área es dura o los asesores producen mediocre? |
+| `calls_by_hour.py [--periodo 30]` | Distribución de llamadas por hora con % contestadas y mejor franja. |
+| `funnel_transitions.py [--asesor ID]` | Matriz de conversión por etapa — FLUJO entre etapas en una ventana. |
+
+### Cursos y programas
+
+| Script | Qué responde |
+|---|---|
+| `curso_report.py <codigo\|id>` | **Reporte completo de UN curso**, **SIEMPRE all-time** (nunca "últimos N días"): ficha + captación + funnel actual + esfuerzo + ingresos. NO calcula P&L. |
+| `funnel_estado.py [codigo\|id]` | Estado ACTUAL del funnel: foto del stock por etapa vigente. Sin curso = global. |
+| `product_search.py "patrón"` | Buscar cursos por nombre o código (devuelve `Codigo`, nunca el Id interno). |
+| `cursos_en_venta.py [--desarrollador X] [--fmt xlsx]` | Cartera de cursos en estado "En venta" (catálogo `EstadoProductoTipoId=20`): funnel, inscritos, TC, TCProc, ingresos. Export Excel. |
+| `programas_top_ventas.py [--desde/--hasta]` | Ranking de programas por ventas en una ventana, con TC de cohorte e ingresos. |
+| `programas_performance.py [--periodo 60]` | Performance de ventana: TC + esfuerzo de llamadas + dinero + PerfScore 0-100. |
+| `cohorte_tc_programas.py [--desde]` | TC de cohorte del mismo programa mes a mes, a madurez equivalente: ¿dónde mejoró/empeoró la conversión? |
+
+### P&L y portafolio
+
+| Script | Qué responde |
+|---|---|
+| `producto_pnl.py <codigo\|id> --cpl <USD> --docente <USD>` | P&L y sensibilidad de un producto. **CPL y docente OBLIGATORIOS — los da el usuario** (ver protocolo abajo). |
+| `producto_compare.py <codigo> <codigo> …` | P&L de varios productos en una tabla (defaults homogéneos de `config.toml`). |
+| `portafolio_encargado.py [--base creacion\|evento]` | Ingresos y estado del portafolio por encargado (`PersonalCreacion`). NO margen. **Mostrar siempre `%Total`** (ver protocolo abajo). |
+
+### Marketing y campañas
+
+| Script | Qué responde |
+|---|---|
+| `paises_priority.py [--tema "regex"]` | Ranking de países con Wilson LB para un set de productos. |
+| `conversion_por_origen.py` | TC por origen del lead (Linkedin/Manual/Wordpress/FormularioWeb) con Wilson LB. Caveat de intención en `references/scripts.md`. |
+| `linkedin_campanas.py [--buscar X]` | Campañas de LinkedIn (`FormName`) con naming pattern decodificado. |
+
+### Calidad y docentes
+
+| Script | Qué responde |
+|---|---|
+| `nps_encuesta_final.py [--nivel] [--timeline]` | NPS de la encuesta final por desarrollador / módulo / evolución temporal. |
+| `pagos_docentes.py [--mes YYYY-MM] [--fmt fichas]` | Pagos a docentes: módulos que terminan de dictar en el mes, horas, fechas, Monto en blanco para completar. |
+
+### Forecast
+
+| Script | Qué responde |
+|---|---|
+| `forecast_programa.py --codigo <X> --cpl <PEN> --docente <PEN>` | Forecast GP + break-even de UN programa → CONTINUAR/RIESGO/CANCELAR (ver protocolo abajo). |
+
+### Utilidades
+
+| Script | Qué responde |
+|---|---|
+| `smoke_test.py` | Valida los módulos sin tocar la DB (pre-`.env`). |
 
 ### Mapeo de pregunta del usuario → script
 
@@ -59,27 +94,27 @@ Run any of these from the skill root. All accept `-h/--help`. Default output is 
 | "¿Quiénes son los 10 mejores asesores?" | `asesores_top.py --top 10 --periodo 90` |
 | "¿Quiénes son los peores?" / "¿Los menos eficientes?" / "¿Quién desperdicia más leads?" | `asesores_top.py --top 15 --bottom --periodo 90` (ordena por ineficiencia: alto volumen de leads con poca/ninguna venta, no solo 0 matrículas) |
 | "Dame el detalle del asesor 81" | `asesor_detail.py 81` |
-| "¿Cuánto cuesta procesar el producto imbpepkeyacc05261?" | Preguntar CPL y pago docente al usuario → `producto_pnl.py imbpepkeyacc05261 --cpl <USD> --docente <USD>` |
+| "¿Cuánto cuesta procesar el producto imbpepkeyacc05261?" / "¿Rentabilidad del curso X?" | Preguntar CPL y pago docente al usuario → `producto_pnl.py imbpepkeyacc05261 --cpl <USD> --docente <USD>` |
 | "¿Qué pasa si subimos el CPL a 0.30?" | `producto_pnl.py <codigo> --cpl 0.30` |
 | "¿En qué países priorizar para cursos de mantenimiento?" | `paises_priority.py --tema "mantenimiento"` |
 | "¿Cuánto tardan los asesores nuevos en cerrar su primera venta?" | `time_to_first_sale.py --desde 2026-01-01` |
 | "¿Cuál es la mejor hora para llamar?" | `calls_by_hour.py --periodo 30` |
 | "¿Cómo es el funnel del asesor 81?" | `funnel_transitions.py --asesor 81` |
 | "Dame el reporte del curso X" / "¿Cómo va el curso X?" / "Todos los datos del curso imbpep…" | `curso_report.py <codigo>` (ficha + captación + funnel + esfuerzo + ingresos en una corrida; si quiere P&L/margen, además preguntar CPL y docente → `producto_pnl.py`) |
-| "¿En qué estado está el funnel del curso 400?" / "¿Dónde están atascados los leads de este programa?" / "¿Cuántos leads vivos quedan?" | `funnel_estado.py 400` |
-| "Dame un reporte de todos los cursos en venta" / "¿Qué cursos están en venta y cómo va su funnel/inscritos/TC/ingresos?" / "Cursos en venta del desarrollador X" / "Exporta a Excel los cursos en venta" | `cursos_en_venta.py` (agrega `--desarrollador X` para filtrar por encargado; `--fmt xlsx -o ruta.xlsx` para Excel). OJO: "en venta" = estado de catálogo `EstadoProductoTipoId=20`, NO cualquier curso con ventas (para eso está `programas_top_ventas.py`). |
+| "¿En qué estado está el funnel del curso 400?" / "¿Dónde están atascados los leads?" / "¿Cuántos leads vivos quedan?" | `funnel_estado.py 400` |
+| "Dame un reporte de todos los cursos en venta" / "Cursos en venta del desarrollador X" / "Exporta a Excel los cursos en venta" | `cursos_en_venta.py` (`--desarrollador X`; `--fmt xlsx -o ruta.xlsx`). OJO: "en venta" = estado de catálogo, NO cualquier curso con ventas (para eso `programas_top_ventas.py`). |
 | "¿En qué productos vende mejor el asesor 81?" / "¿Qué cursos son su fuerte?" | `asesor_x_producto.py 81 --periodo 90` |
-| "¿Cómo va el ramp-up de los asesores que entraron este año?" / "Compara el rendimiento mes a mes de la cohorte de enero." | `cohort_ramp.py --desde 2026-01-01` |
-| "¿Qué programas vendieron más en abril-mayo?" / "Top de cursos por ventas vs leads con TC e ingresos." / "¿Cuánto se ha cobrado por curso?" | `programas_top_ventas.py --desde 2026-04-01 --hasta 2026-06-01 --top 25` |
-| "¿En qué programas creció/cayó la conversión cohorte a cohorte?" / "Compara la TC de las cohortes de los cursos." | `cohorte_tc_programas.py --desde 2026-01-01 --mat-days 30` |
-| "¿Qué programas tienen mejor performance considerando TC, llamadas/esfuerzo y dinero?" / "¿Dónde rinde más el tiempo del asesor?" | `programas_performance.py --periodo 60` |
-| "Compara el P&L de estos cursos." / "¿Cuál de estos cursos da más margen?" | `producto_compare.py <codigo> <codigo> …` (códigos directo) |
-| "¿Cuánto ingresó/cobró cada persona de desarrollo / encargado de los cursos?" / "¿Cómo está el portafolio de cada encargado (leads, matrículas, TC, cobrado)?" | `portafolio_encargado.py` (ajusta `--comp-desde/--comp-hasta`; `--base evento` para caja por fecha de pago) |
-| "¿Qué canal/origen convierte mejor?" / "Compara la TC por origen del lead." / "¿De dónde vienen los leads aparte de LinkedIn?" | `conversion_por_origen.py` |
-| "¿Cómo se llaman las campañas de LinkedIn?" / "¿Qué naming pattern siguen?" / "¿Hay una campaña con 'X' en el nombre?" | `linkedin_campanas.py [--buscar X] [--por-formato]` |
-| "¿Cuál es el NPS de la encuesta final?" / "¿Qué NPS tiene cada desarrollador / cada módulo?" / "¿Qué módulos de cada desarrollador tienen mejor/peor recomendación?" | `nps_encuesta_final.py [--nivel detalle]` |
-| "Haz el forecast del curso X" / "¿Cuántos leads necesita el programa X?" / "¿Llega este curso a break-even?" / "¿Conviene cancelar el programa X?" | `forecast_programa.py --codigo <X> --cpl <PEN> --docente <PEN>` (ver protocolo abajo — pedir al usuario los datos faltantes) |
-| "Dame los pagos a docentes de este mes" / "¿Qué docentes terminan de dictar este mes?" / "Pagos a docentes de los cursos de Patrick" / "Fichas de pago de los módulos que finalizan en junio" | `pagos_docentes.py [--mes YYYY-MM] [--desarrollador X] --fmt fichas` (para la lista de fichas con Monto en blanco; sin `--fmt` da tabla) |
+| "¿Cómo va el ramp-up de los asesores que entraron este año?" | `cohort_ramp.py --desde 2026-01-01` |
+| "¿Qué programas vendieron más en abril-mayo?" / "¿Cuánto se ha cobrado por curso?" | `programas_top_ventas.py --desde 2026-04-01 --hasta 2026-06-01 --top 25` |
+| "¿En qué programas creció/cayó la conversión cohorte a cohorte?" | `cohorte_tc_programas.py --desde 2026-01-01 --mat-days 30` |
+| "¿Qué programas tienen mejor performance considerando TC, llamadas y dinero?" | `programas_performance.py --periodo 60` |
+| "Compara el P&L de estos cursos." / "¿Cuál da más margen?" | `producto_compare.py <codigo> <codigo> …` |
+| "¿Cuánto ingresó/cobró cada persona de desarrollo / encargado?" / "¿Cómo está el portafolio de cada encargado?" | `portafolio_encargado.py` (ajusta `--comp-desde/--comp-hasta`; `--base evento` para caja por fecha de pago) |
+| "¿Qué canal/origen convierte mejor?" / "¿De dónde vienen los leads aparte de LinkedIn?" | `conversion_por_origen.py` |
+| "¿Cómo se llaman las campañas de LinkedIn?" / "¿Qué naming pattern siguen?" | `linkedin_campanas.py [--buscar X] [--por-formato]` |
+| "¿Cuál es el NPS de la encuesta final?" / "¿Qué NPS tiene cada desarrollador / módulo?" | `nps_encuesta_final.py [--nivel detalle]` |
+| "Haz el forecast del curso X" / "¿Llega este curso a break-even?" / "¿Conviene cancelarlo?" | `forecast_programa.py --codigo <X> --cpl <PEN> --docente <PEN>` (ver protocolo abajo — pedir al usuario los datos faltantes) |
+| "Dame los pagos a docentes de este mes" / "¿Qué docentes terminan de dictar este mes?" / "Fichas de pago de junio" | `pagos_docentes.py [--mes YYYY-MM] [--desarrollador X] --fmt fichas` (fichas con Monto en blanco; sin `--fmt` da tabla) |
 
 ## SIEMPRE: estado actual del funnel en análisis de curso/programa
 
@@ -184,7 +219,7 @@ If the validation prints a table of KPIs, setup is complete. If you get a connec
 
 ## Critical knowledge condensed
 
-These are real bugs from past sessions. The scripts already handle them; only relevant if you fall back to raw MCP.
+These are real bugs from past sessions. The scripts already handle them; only relevant if you fall back to raw MCP. **Fuente canónica: `references/pitfalls.md`** (19 bugs con root cause + fix) — esto es el resumen; ante duda o conflicto, manda pitfalls.md.
 
 ### Soft-delete is everywhere
 Filter `Estado = 1` on every joined table: `Oportunidad`, `HistorialEstado`, `Producto`, `Personal`, `CobranzaPlan`, `CobranzaPago`, `Persona`. Personal also needs `ISNULL(Cesado, 0) = 0`.
@@ -271,10 +306,11 @@ Para el **agregado de un portafolio por encargado** hay `portafolio_encargado.py
 
 ## Reference files (read when needed)
 
+- `references/scripts.md` — **Detalle de cada script**: flags completos, semántica de columnas, caveats. Lee antes de interpretar columnas desconocidas.
 - `references/schema.md` — Tablas, columnas, FKs, soft-delete, enums. Lee antes de cualquier query nueva.
-- `references/queries.md` — 16 templates SQL probados. Para ad-hoc via MCP.
+- `references/queries.md` — 18 templates SQL probados. Para ad-hoc via MCP.
 - `references/calculations.md` — Wilson, FTE, sensibilidad, breakeven, BCG quadrants. Con worked example de imbpepkeyacc05261.
-- `references/pitfalls.md` — 19 bugs reales con root cause + fix.
+- `references/pitfalls.md` — 19 bugs reales con root cause + fix. Fuente canónica del "Critical knowledge".
 - `references/postgres_migration.md` — Inventario T-SQL→PostgreSQL y pasos para la migración de proveedor.
 
 ## CLI conventions
