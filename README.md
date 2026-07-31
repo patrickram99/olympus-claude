@@ -2,6 +2,78 @@
 
 Skill de Claude + librería ejecutable de Python para analizar el CRM Olympus (IMB / IESL Institute) sobre SQL Server.
 
+## Ejecutar sin Claude (CLI standalone)
+
+No necesitas Claude para nada de esto: cada script de `scripts/` es un CLI independiente.
+
+### Setup
+
+```bash
+# Instalar deps (sin venv, root install)
+pip install -r requirements.txt
+
+# Configurar .env
+cp .env.example .env
+# editar con DB_SERVER, DB_USER, DB_PASSWORD, DB_NAME
+
+# Validar
+python scripts/pipeline_kpis.py --periodo 7
+```
+
+Si la validación imprime KPIs en tabla, todo OK. Si hay error de conexión, revisa `.env` o instala "ODBC Driver 18 for SQL Server" desde Microsoft.
+
+### Ejemplos comunes
+
+Cada script tiene `--help`:
+```bash
+python scripts/asesores_top.py --help
+```
+
+```bash
+# Snapshot global del último mes
+python scripts/pipeline_kpis.py --periodo 30
+
+# Top 10 asesores con muestra ≥ 30 leads
+python scripts/asesores_top.py --top 10 --umbral 30
+
+# Detalle del asesor 81 (período 90 días)
+python scripts/asesor_detail.py 81
+
+# P&L de un producto con defaults
+python scripts/producto_pnl.py 381
+
+# What-if: ¿qué pasa si subo el CPL a 0.30 USD?
+python scripts/producto_pnl.py 381 --cpl 0.30
+
+# Países para cursos de mantenimiento y finanzas
+python scripts/paises_priority.py --tema "mantenimiento|finanzas"
+
+# Time-to-first-sale asesores ingresados en 2026
+python scripts/time_to_first_sale.py --since 2026-01-01 -o asesores_ttfs.csv
+
+# Mejor hora para llamar
+python scripts/calls_by_hour.py
+
+# Buscar productos por código
+python scripts/product_search.py "imbpepkeyacc"
+
+# Funnel del asesor 81
+python scripts/funnel_transitions.py --asesor 81
+```
+
+### Testing rápido del setup
+
+```bash
+python scripts/product_search.py "Key Account"
+# debería listar productos con "Key Account" en el nombre
+
+python scripts/pipeline_kpis.py --periodo 7
+# debería imprimir KPIs reales del último mes
+
+python scripts/producto_pnl.py 381
+# si el producto 381 existe, debería dar P&L completo con margen
+```
+
 ## Estructura
 
 ```
@@ -37,22 +109,6 @@ olympus-crm-analytics/
     └── postgres_migration.md # inventario T-SQL→Postgres para la migración
 ```
 
-## Setup
-
-```bash
-# Instalar deps (sin venv, root install)
-pip install -r requirements.txt
-
-# Configurar .env
-cp .env.example .env
-# editar con DB_SERVER, DB_USER, DB_PASSWORD, DB_NAME
-
-# Validar
-python scripts/pipeline_kpis.py --periodo 7
-```
-
-Si la validación imprime KPIs en tabla, todo OK. Si hay error de conexión, revisa `.env` o instala "ODBC Driver 18 for SQL Server" desde Microsoft.
-
 ## Seguridad y proveedor de BD
 
 - El proveedor se elige con `DB_DIALECT` en `.env` (hoy `mssql`; `postgres` quedará habilitado con la migración). Lo específico de cada proveedor — driver, connection string, TLS/certificados — vive en `lib/db_backends/`, así el cambio de proveedor o de certificado no toca scripts ni queries.
@@ -66,47 +122,6 @@ Si la validación imprime KPIs en tabla, todo OK. Si hay error de conexión, rev
 - **D4 — Parámetros de negocio:** centralizados en `config.toml` (dueño: PM).
 - **D5 — Moneda:** todo en **USD** por defecto; `--moneda pen` disponible en los reportes de dinero.
 - **D6 — Límites:** `--top` máx. 500 (los actuales están bien).
-
-## Uso desde CLI
-
-Cada script tiene `--help`:
-```bash
-python scripts/asesores_top.py --help
-```
-
-### Ejemplos comunes
-
-```bash
-# Snapshot global del último mes
-python scripts/pipeline_kpis.py --periodo 30
-
-# Top 10 asesores con muestra ≥ 30 leads
-python scripts/asesores_top.py --top 10 --umbral 30
-
-# Detalle del asesor 81 (período 90 días)
-python scripts/asesor_detail.py 81
-
-# P&L de un producto con defaults
-python scripts/producto_pnl.py 381
-
-# What-if: ¿qué pasa si subo el CPL a 0.30 USD?
-python scripts/producto_pnl.py 381 --cpl 0.30
-
-# Países para cursos de mantenimiento y finanzas
-python scripts/paises_priority.py --tema "mantenimiento|finanzas"
-
-# Time-to-first-sale asesores ingresados en 2026
-python scripts/time_to_first_sale.py --since 2026-01-01 -o asesores_ttfs.csv
-
-# Mejor hora para llamar
-python scripts/calls_by_hour.py
-
-# Buscar productos por código
-python scripts/product_search.py "imbpepkeyacc"
-
-# Funnel del asesor 81
-python scripts/funnel_transitions.py --asesor 81
-```
 
 ## Uso desde Claude (con la skill activada)
 
@@ -124,19 +139,6 @@ Si no hay script para tu pregunta, Claude cae a `mcp__mssql__execute_sql` usando
 - **Moneda**: USD donde la DB lo tiene, PEN en cálculos de costo. Default USD→PEN = 3.78 (configurable en `.env`).
 - **Período**: días hacia atrás (`--periodo 30`).
 - **Umbral**: leads mínimos para considerar en rankings (anti-outlier, default 30).
-
-## Testing rápido del setup
-
-```bash
-python scripts/product_search.py "Key Account"
-# debería listar productos con "Key Account" en el nombre
-
-python scripts/pipeline_kpis.py --periodo 7
-# debería imprimir KPIs reales del último mes
-
-python scripts/producto_pnl.py 381
-# si el producto 381 existe, debería dar P&L completo con margen
-```
 
 ## Troubleshooting
 
