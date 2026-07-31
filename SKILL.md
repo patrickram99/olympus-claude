@@ -33,6 +33,7 @@ Run any of these from the skill root. All accept `-h/--help`. Default output is 
 | `scripts/calls_by_hour.py [--periodo 30]` | Distribución de llamadas por hora 0-23 con % contestadas y mejor franja detectada. |
 | `scripts/funnel_transitions.py [--asesor ID] [--periodo 90]` | Matriz de conversión por etapa (Reg→Cal+, Cal→Pot+, Pot→Prom+, Prom→Mat). FLUJO entre etapas en una ventana. |
 | `scripts/funnel_estado.py [codigo\|id]` | Estado ACTUAL del funnel: foto del stock de oportunidades por etapa vigente (Registrado/Calificado/Potencial/Promesa/Matriculado/Perdido/No calificado), con activas vs. cerradas y TC actual. Sin curso = global. |
+| `scripts/curso_report.py <codigo\|id> [--moneda usd\|pen] [--usd-pen N]` | **Reporte completo de UN curso** en una sola corrida, **SIEMPRE all-time** (todas las oportunidades asignadas al curso — nunca ventanas de "últimos N días"): ficha (nombre, desarrollador, estado de catálogo, precio base, fecha de inicio — inferida del sufijo MMYYN si la BD no la tiene), captación (primer/último lead, leads totales), foto actual del funnel (stock por etapa + activos + TC/TCProc), esfuerzo (asesores involucrados, llamadas contestadas/no contestadas acumuladas) e ingresos (comprometido/cobrado/%Cob, cohorte all-time, USD default). Es el script para "dame el reporte del curso X". NO calcula P&L (eso es `producto_pnl.py`, que pide CPL y docente). |
 | `scripts/product_search.py "patrón"` | Buscar cursos por nombre o código de lanzamiento (devuelve el `Codigo`, nunca el Id interno). Útil cuando el usuario da un nombre aproximado. |
 | `scripts/cursos_en_venta.py [--desarrollador ID\|texto] [--excluir REGEX] [--usd-pen N] [--fmt table\|csv\|json\|xlsx] [-o ruta]` | **Cartera de cursos en estado "En venta"** (`Producto.EstadoProductoTipoId=20`) — los que HOY se comercializan, no cualquiera que haya vendido. Una fila por curso con: foto del funnel actual (Reg/Cal/Pot/Prom = stock vigente por etapa), `Ins` (inscritos = matriculados vigentes), `TC` (Ins/Leads %), `TCProc` (Ins sobre leads YA procesados = Ins/(Leads−Reg) %, excluye Registrado que aún no se llama), `Perdidos` (Perdido 7 + No calificado 2), `Comprometido`/`Cobrado`/`%Cob` en USD por defecto (`--moneda pen` convierte; cohorte all-time del curso). `--desarrollador` filtra por encargado (`PersonalCreacion`): Id numérico o substring del nombre. `--excluir` es un regex case-insensitive sobre código+nombre para descartar paraguas de captación — **default `mundialer`** (excluye las campañas "Mundialero"); pasa `--excluir ""` para no excluir nada. `--fmt xlsx -o ruta.xlsx` escribe un Excel con encabezado formateado, panel congelado y autofiltro (columnas: Codigo, Curso, Leads, Reg, Cal, Pot, Prom, Ins, TC, TCProc, Perdidos, Comprometido, Cobrado, %Cob). Ordena por Ins desc. |
 | `scripts/programas_top_ventas.py [--desde YYYY-MM-DD] [--hasta YYYY-MM-DD] [--top 25] [--usd-pen N] [--max-usd-por-venta N]` | Ranking de programas por ventas en una ventana, con leads, TC de cohorte (conv/leads del período), ingreso comprometido y cobrado (USD por defecto; `--moneda pen` convierte), %% cobrado y código del curso. Incluye análisis agregado de %% cobrado y un guard que marca/excluye montos comprometidos corruptos. |
@@ -64,6 +65,7 @@ Run any of these from the skill root. All accept `-h/--help`. Default output is 
 | "¿Cuánto tardan los asesores nuevos en cerrar su primera venta?" | `time_to_first_sale.py --desde 2026-01-01` |
 | "¿Cuál es la mejor hora para llamar?" | `calls_by_hour.py --periodo 30` |
 | "¿Cómo es el funnel del asesor 81?" | `funnel_transitions.py --asesor 81` |
+| "Dame el reporte del curso X" / "¿Cómo va el curso X?" / "Todos los datos del curso imbpep…" | `curso_report.py <codigo>` (ficha + captación + funnel + esfuerzo + ingresos en una corrida; si quiere P&L/margen, además preguntar CPL y docente → `producto_pnl.py`) |
 | "¿En qué estado está el funnel del curso 400?" / "¿Dónde están atascados los leads de este programa?" / "¿Cuántos leads vivos quedan?" | `funnel_estado.py 400` |
 | "Dame un reporte de todos los cursos en venta" / "¿Qué cursos están en venta y cómo va su funnel/inscritos/TC/ingresos?" / "Cursos en venta del desarrollador X" / "Exporta a Excel los cursos en venta" | `cursos_en_venta.py` (agrega `--desarrollador X` para filtrar por encargado; `--fmt xlsx -o ruta.xlsx` para Excel). OJO: "en venta" = estado de catálogo `EstadoProductoTipoId=20`, NO cualquier curso con ventas (para eso está `programas_top_ventas.py`). |
 | "¿En qué productos vende mejor el asesor 81?" / "¿Qué cursos son su fuerte?" | `asesor_x_producto.py 81 --periodo 90` |
@@ -92,7 +94,9 @@ es lo que indica si el curso aún tiene recorrido o ya se agotó la demanda.
 
 Preséntalo como una tabla corta de etapas con su conteo y %, más el resumen de
 activas vs. matriculadas vs. perdidas/descartadas. Si no conoces el `producto_id`,
-resuélvelo primero con `product_search.py`.
+resuélvelo primero con `product_search.py`. Si el pedido es el **reporte general
+de un curso** (no solo su P&L/performance), `curso_report.py` ya incluye esta
+foto del funnel — no hace falta correr `funnel_estado.py` aparte.
 
 ## SIEMPRE: protocolo del forecast de programa (`forecast_programa.py`)
 
